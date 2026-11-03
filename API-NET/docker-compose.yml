@@ -1,15 +1,17 @@
 # Run the API on its own:  docker compose up --build   (from API-NET)
 # Needs API-NET/.env.docker (copy .env.docker.example). Postgres runs on the host.
+name: api-net-v3
+
 services:
   api:
     build: .
-    image: fpflapinetimg
-    container_name: fpfl-api-net
+    image: fpflapinetv3img
+    container_name: fpfl-v3-api-net
     env_file: .env.docker
     environment:
       ASPNETCORE_ENVIRONMENT: Production
     ports:
-      - "8100:8080" # API-NET -> http://localhost:8100
+      - "8300:8080" # API-NET -> http://localhost:8300
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
