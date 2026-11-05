@@ -84,7 +84,7 @@ public static class LedgerBuilder
                     ItemId = extra.ItemId,
                     OccurrenceDate = date,
                     ItemTypeId = ItemRules.Debit,
-                    ItemTypeName = PaydownTypeName,
+                    ItemTypeName = extra.TypeName ?? PaydownTypeName,
                     PeriodName = extra.Detail,
                     Name = extra.Name,
                     Amount = amount,

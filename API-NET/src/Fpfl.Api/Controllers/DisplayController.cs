@@ -71,4 +71,28 @@ public sealed class DisplayController(
 
         return Ok(responses.Success(mapper.ToResponse(debts), "Paydown retrieved successfully"));
     }
+
+    /// <summary>
+    ///     Credit Cards / Loans: each account's balance per day, its purchases, payments and interest, over the
+    ///     same window as the ledger. The payments also appear on the ledger as "Card/Loan Payment" debits.
+    /// </summary>
+    [HttpPost("accounts")]
+    [ProducesResponseType<ApiResponse<IReadOnlyList<AccountLedgerResponse>>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiResponse<object>>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<AccountLedgerResponse>>>> BuildAccounts(
+        LedgerRequest request, CancellationToken cancellationToken)
+    {
+        var caller = authMapper.GetUserGuid(User);
+
+        var accounts = await ledger.BuildAccountsAsync(
+            request.UserId ?? caller,
+            request.LedgerStartDate!.Value,
+            request.LedgerEndDate!.Value,
+            caller,
+            User.IsInRole(AuthClaims.AdminRole),
+            cancellationToken);
+
+        return Ok(responses.Success(mapper.ToResponse(accounts), "Accounts ledger retrieved successfully"));
+    }
 }

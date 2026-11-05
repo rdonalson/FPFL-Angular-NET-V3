@@ -90,6 +90,9 @@ public sealed record LedgerAdjustment
 
     /// <summary>Negative.</summary>
     public required decimal Amount { get; init; }
+
+    /// <summary>Item-type name shown on the ledger; null means <see cref="LedgerBuilder.PaydownTypeName" />.</summary>
+    public string? TypeName { get; init; }
 }
 
 public sealed record PaydownResult(IReadOnlyList<DebtPaydown> Debts, IReadOnlyList<LedgerAdjustment> Adjustments);

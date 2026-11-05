@@ -1,4 +1,5 @@
 using Fpfl.Api.Dtos.Display;
+using Fpfl.Display.Domain.Accounts;
 using Fpfl.Display.Domain.Models;
 using Fpfl.Display.Domain.Paydown;
 
@@ -12,6 +13,37 @@ public sealed class DisplayMapper
 
     public IReadOnlyList<DebtPaydownResponse> ToResponse(IReadOnlyList<DebtPaydown> debts) =>
         debts.Select(ToResponse).ToList();
+
+    public IReadOnlyList<AccountLedgerResponse> ToResponse(IReadOnlyList<AccountLedger> accounts) =>
+        accounts.Select(ToResponse).ToList();
+
+    public AccountLedgerResponse ToResponse(AccountLedger account) => new(
+        account.AccountId,
+        account.Name,
+        AccountMapper.KindName(account.Kind),
+        account.Apr,
+        account.CreditLimit,
+        account.OpeningBalance,
+        account.BalanceDate,
+        account.StartingBalance,
+        account.EndingBalance,
+        account.TotalPurchases,
+        account.TotalPaid,
+        account.TotalInterest,
+        account.Balances,
+        account.Events.Select(e => new AccountEventResponse(
+            e.Date,
+            e.Kind switch
+            {
+                AccountEventKind.Purchase => "purchase",
+                AccountEventKind.Payment => "payment",
+                _ => "interest",
+            },
+            e.SourceId,
+            e.SourceName,
+            e.Percent,
+            e.Amount,
+            e.BalanceAfter)).ToList());
 
     public DebtPaydownResponse ToResponse(DebtPaydown debt) => new(
         debt.DebtId,

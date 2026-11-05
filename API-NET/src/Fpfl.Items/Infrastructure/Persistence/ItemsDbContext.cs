@@ -25,6 +25,12 @@ public sealed class ItemsDbContext(DbContextOptions<ItemsDbContext> options) : D
 
     public DbSet<DebtAllocation> DebtAllocations => Set<DebtAllocation>();
 
+    public DbSet<CreditAccount> CreditAccounts => Set<CreditAccount>();
+
+    public DbSet<AccountPurchase> AccountPurchases => Set<AccountPurchase>();
+
+    public DbSet<AccountPayment> AccountPayments => Set<AccountPayment>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);

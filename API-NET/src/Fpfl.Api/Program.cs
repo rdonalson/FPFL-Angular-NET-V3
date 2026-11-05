@@ -55,6 +55,7 @@ builder.Services.AddSingleton<TimePeriodMapper>();
 builder.Services.AddSingleton<ItemMapper>();
 builder.Services.AddSingleton<DisplayMapper>();
 builder.Services.AddSingleton<DebtMapper>();
+builder.Services.AddSingleton<AccountMapper>();
 
 builder.Services.AddControllers();
 

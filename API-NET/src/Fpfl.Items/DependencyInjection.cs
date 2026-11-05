@@ -34,6 +34,9 @@ public static class DependencyInjection
         services.AddScoped<IDebtRepository, DebtRepository>();
         services.AddScoped<IDebtService, DebtService>();
 
+        services.AddScoped<ICreditAccountRepository, CreditAccountRepository>();
+        services.AddScoped<ICreditAccountService, CreditAccountService>();
+
         services.TryAddSingleton(TimeProvider.System);
 
         return services;
