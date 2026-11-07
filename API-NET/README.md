@@ -141,9 +141,9 @@ Fpfl.Api  ──► Fpfl.Auth ──► Fpfl.Common
 
 ## 🧭 Architecture Overview
 
-The module layout is the same as API‑JDK's — an API layer delegating to Auth, Items, and Display contexts over shared common utilities and one PostgreSQL database:
+The modules mirror API‑JDK's, built the .NET way. `Fpfl.Api` is the only host: controllers, DTOs and mappers, the response envelope and the health endpoints. It calls three bounded contexts. **Items** owns items, cards & loans and debts with their rules and `ItemsDbContext`; **Auth** owns users, roles, tokens and `AuthDbContext`; **Display** owns the forecast math (recurrence, ledger, card / loan and paydown calculators) and reads through Items' repositories instead of having a database of its own. Every project references `Fpfl.Common` for exceptions and sanitization, and both `DbContext`s map onto the existing `fpfl` tables in FPFL‑V3:
 
-![Modular Dependency Diagram](docs/FPFL-Module-Architecture.png)
+![API-NET module architecture](docs/FPFL-Module-Architecture.png)
 
 ---
 
