@@ -13,7 +13,9 @@ The project is organized into two top‑level applications plus shared infrastru
 
 This repository serves as the **parent project**, containing both applications, the deployment manifests, and their shared development workflow.
 
-> 🚧 **Nearly at parity, and past it.** Auth, credits and debits with every recurrence pattern, the initial amount, the forecasted ledger with its chart and **Excel export**, item types, time periods, and the full deployment pipeline are live. **Debt Paydown**, a feature neither earlier version had, tracks how credit card and other debts get paid down. A **Docs** page and an admin **System Status** page (UI checks plus the API's `/health` components and `/info`) match FPFL-React-Java's. See [Project Status](#-project-status).
+> 🚧 **Nearly at parity, and past it.** Auth, credits and debits with every recurrence pattern, the initial amount, the forecasted ledger with its chart and **Excel export**, item types, time periods, and the full deployment pipeline are live. Two features neither earlier version had go further: **Cards & Loans** (V3) keeps each credit card or loan as its own account, with its own purchases, paid down by your credits and debits, and **Debt Paydown** tracks how a debit's debt gets paid down. A **Docs** page and an admin **System Status** page (UI checks plus the API's `/health` components and `/info`) match FPFL-React-Java's. See [Project Status](#-project-status).
+>
+> **V3** runs on its own database, **FPFL‑V3** (a copy of FPFL‑V2 plus the Cards & Loans tables). The React/Java version stays on FPFL‑V2.
 
 ### 🌐 Live Environment
 
@@ -77,12 +79,12 @@ The FPFL system is designed as a **modular, maintainable, enterprise‑grade ful
 | Project | Mirrors (API‑JDK) | Role |
 | ------- | ----------------- | ---- |
 | `Fpfl.Api` | `module-api` | REST controllers, DTOs, mappers, response envelope, global exception handling, OpenAPI, health |
-| `Fpfl.Items` | `module-items-bc` | Domain logic & persistence for items (credits / debits), the initial amount, item types and time periods |
-| `Fpfl.Display` | `module-display-bc` | Forecast ledger: recurrence expanders and the running‑balance ledger builder |
+| `Fpfl.Items` | `module-items-bc` | Domain logic & persistence for items (credits / debits), the initial amount, item types, time periods, cards & loans, and tracked debts |
+| `Fpfl.Display` | `module-display-bc` | Forecast ledger: recurrence expanders, the running‑balance ledger builder, and the card / loan and paydown calculators |
 | `Fpfl.Auth` | `module-auth` | Users, roles, JWT issue/validation, refresh tokens, BCrypt hashing |
 | `Fpfl.Common` | `module-common-bc` | Domain exceptions and the sanitizer |
 
-- Connects to **PostgreSQL** (schema `fpfl`) — the **same database** as API‑JDK
+- Connects to **PostgreSQL** (schema `fpfl`) in the **FPFL‑V3** database — the same schema as API‑JDK's FPFL‑V2, plus the tables only API‑NET uses
 - OpenAPI document served by `Microsoft.AspNetCore.OpenApi`, browsable in **Swagger UI**
 - Health at `/health` with the same components as API‑JDK's Actuator (`db`, `diskSpace`, `ping`), and version / build / runtime at `/info`; `/health` is wired into the Kubernetes readiness probe
 
@@ -105,11 +107,17 @@ For full backend details, see the API README:
 
 # **🗄️ Database Overview (PostgreSQL)**
 
-API‑NET reads and writes the **same `fpfl` schema** as API‑JDK, so both stacks share users, items, and reference data. The schema is owned by API‑JDK (Hibernate `ddl-auto=update`); EF Core maps onto the existing tables and is **not** used to generate migrations.
+API‑NET uses the **`fpfl` schema** that API‑JDK created. V3 runs against **FPFL‑V3**, a copy of the shared FPFL‑V2 database with the Cards & Loans tables added; API‑JDK stays on FPFL‑V2, so the two stacks no longer share live data. The base tables come from API‑JDK (Hibernate `ddl-auto=update`). EF Core maps onto the existing tables and is **not** used to generate migrations, and the tables only API‑NET uses come from numbered scripts in [`API-NET/db`](API-NET/db).
+
+| Database | Used by | Where |
+| -------- | ------- | ----- |
+| **FPFL‑V3** | API‑NET (V3) | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
+| FPFL‑V2 | API‑JDK (React/Java) | Same servers |
 
 ### **Domain Entities**
 
 - `Item` — user‑defined financial items with amount, date bounds, and recurrence metadata
+- `CreditAccount` / `AccountPurchase` / `AccountPayment` — Cards & Loans: each credit card or loan, the purchases charged to it, and the credits and debits that pay it (API‑NET only; created by `API-NET/db/002_credit_accounts.sql`)
 - `Debt` / `DebtAllocation` — Debt Paydown's tracked debts and the credits allocated to them (API‑NET only; created by `API-NET/db/001_debt_paydown.sql`)
 - `ItemType` — credit / debit / initial‑amount classification
 - `TimePeriod` — recurrence periods (one‑time, daily, weekly, bi‑weekly, monthly, quarterly, annual, etc.)
@@ -120,15 +128,11 @@ API‑NET reads and writes the **same `fpfl` schema** as API‑JDK, so both stac
 - `Role` / `UserRole` — role assignments (composite key)
 - `RefreshToken` — persisted (hashed) refresh tokens for session renewal
 
-**Items** — items, item types, time periods, and Debt Paydown's debts and allocations:
+The FPFL‑V3 entity relationship diagram — items and their lookups, Cards & Loans, Debt Paydown, and the auth tables:
 
-![Items entity relationship diagram](API-NET/docs/FPFL-ER-Item.png)
+![FPFL-V3 entity relationship diagram](API-NET/docs/FPFL-ER-V3.png)
 
-**Auth** — users, roles, and refresh tokens:
-
-![Auth entity relationship diagram](API-NET/docs/FPFL-ER-Auth.png)
-
-A full table breakdown is included in the API README.
+A full table breakdown is included in the [API README](API-NET/README.md).
 
 ---
 
@@ -160,6 +164,21 @@ The original version computed the ledger in a database stored procedure. This re
 
 ---
 
+# **🏦 Cards & Loans** *(V3)*
+
+New in V3. A credit card or loan is its own account rather than one of your debits: it has an opening balance (as of a date), an optional APR and, for a card, an optional credit limit. Purchases are charged to it, and your credits and debits pay it down.
+
+- **Purchases** — charged to the account, never to the bank. One Time, Daily and Weekly for now, each with an optional date range.
+- **Payments** — each occurrence of a paying **credit** sends a fixed amount or a percentage of it ("$200 of every paycheck", "25% of every bonus"); that money leaves the main bank forecast as a **"Card/Loan Payment"** debit. A paying **debit** (the card's monthly payment, say) sends its whole amount and is already on the ledger, so it isn't counted twice.
+- **Engine** — `AccountLedgerCalculator` in `Fpfl.Display` runs each account day by day from its balance date with the same recurrence expanders: purchases first, then payments, interest (APR ÷ 12) at each month end while anything is owed, payments cut to what's owed, and a projection up to 30 years out for the payoff date. Pure and unit‑tested.
+- **Rules** — `CreditAccountRules`: unique names per user, balance $0–$1B, APR 0–100%, a credit limit only on cards, up to 20 payments, a debit pays only one account, and a fixed amount is at most the credit's own amount, while one credit's percentages can't add up to more than 100% across your accounts.
+- **UI** — a **Cards & Loans** page (a card per account and an add / edit dialog choosing which credits and debits pay it), an account page for its purchases, **Cards & loans chart** and **Cards & loans ledger** tabs on Display, and a **Cards & Loans** sheet in the Excel export.
+- **Storage** — `fpfl.credit_accounts`, `fpfl.account_purchases` and `fpfl.account_payments`, created by [`API-NET/db/002_credit_accounts.sql`](API-NET/db/002_credit_accounts.sql). Deleting an account removes its purchases and payments; deleting a credit removes its payments.
+
+Cards & Loans is planned to replace Debt Paydown once it covers everything Debt Paydown does; until then both are live.
+
+---
+
 # **💳 Debt Paydown**
 
 A feature new to this version. Pick a debit you're paying down (a credit card payment, say), enter what's owed and an optional APR, then send a percentage of any credits to it — "30% of every paycheck, 50% of every bonus".
@@ -188,6 +207,7 @@ Ultimately this version will match every feature of [FPFL-React-Java](https://gi
 | Initial amount (created automatically) | ✅ | ✅ |
 | Forecasted ledger + chart | ✅ | ✅ |
 | Ledger download to Excel (expandable rows) | ✅ | — |
+| **Cards & Loans** — accounts, purchases, payments from credits and debits, chart / ledger / Excel sheet *(new in V3)* | ✅ | ✅ |
 | **Debt Paydown** — tracked debts, allocations, paydown chart / ledger / Excel sheet *(new)* | ✅ | ✅ |
 | Docs page | ✅ | — |
 | Admin System Status page — UI checks, API health components, version, 30 s auto refresh | ✅ | ✅ (`/health`, `/info`) |
@@ -219,8 +239,9 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 | ---- | ------------- |
 | [LedgerBuilder](API-NET/src/Fpfl.Display/Domain/LedgerBuilder.cs) · [RecurrenceEngine](API-NET/src/Fpfl.Display/Domain/Recurrence/RecurrenceEngine.cs) | The forecast engine as pure business logic (it replaced the original version's stored procedure): expands every item into dated occurrences and builds a running balance in exact `decimal` cents |
 | [EveryTwoWeeksExpander](API-NET/src/Fpfl.Display/Domain/Recurrence/EveryTwoWeeksExpander.cs) · [NthWeekdayExpander](API-NET/src/Fpfl.Display/Domain/Recurrence/NthWeekdayExpander.cs) · [CalendarMath](API-NET/src/Fpfl.Display/Domain/Recurrence/CalendarMath.cs) | Calendar edge cases: paydays anchored to the item's start, "the last Friday", the 31st in short months, Feb 29; one strategy class per pattern |
+| [AccountLedgerCalculator](API-NET/src/Fpfl.Display/Domain/Accounts/AccountLedgerCalculator.cs) | Cards & Loans: each card or loan run day by day — purchases, fixed or percentage payments from credits, whole‑amount payments from debits, monthly interest and a payoff date — with the money sent from credits fed back into the main ledger |
 | [PaydownCalculator](API-NET/src/Fpfl.Display/Domain/Paydown/PaydownCalculator.cs) | Debt payoff projection, a feature neither earlier version had: payments and allocated shares of income, monthly interest, a last payment cut to what's left, and a payoff date up to 30 years out |
-| [ItemRules](API-NET/src/Fpfl.Items/Domain/ItemRules.cs) · [DebtRules](API-NET/src/Fpfl.Items/Domain/DebtRules.cs) | Domain invariants kept out of controllers: each period's required fields, only your own items, no credit allocated past 100% |
+| [ItemRules](API-NET/src/Fpfl.Items/Domain/ItemRules.cs) · [CreditAccountRules](API-NET/src/Fpfl.Items/Domain/CreditAccountRules.cs) · [DebtRules](API-NET/src/Fpfl.Items/Domain/DebtRules.cs) | Domain invariants kept out of controllers: each period's required fields, only your own items, no credit allocated past 100% |
 | [ItemRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/ItemRepository.cs) | EF Core mapped onto a schema another API owns (shared PostgreSQL with the Java version), behind a domain interface |
 | [Sanitizer](API-NET/src/Fpfl.Common/Sanitization/Sanitizer.cs) | Reflection-based input sanitizing driven by `[StrictText]` / `[LenientText]` attributes, safe for records, collections and cycles |
 | [GlobalExceptionHandler](API-NET/src/Fpfl.Api/Exceptions/GlobalExceptionHandler.cs) · [ApiResponseFactory](API-NET/src/Fpfl.Api/Responses/ApiResponseFactory.cs) | One response envelope for every success and error, with a correlation ID that matches the server log |
@@ -239,7 +260,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 
 | File | What it shows |
 | ---- | ------------- |
-| [RecurrenceEngineTests](API-NET/tests/Fpfl.Api.Tests/RecurrenceEngineTests.cs) · [PaydownCalculatorTests](API-NET/tests/Fpfl.Api.Tests/PaydownCalculatorTests.cs) | Calendar rules and payoff math pinned down: month ends, leap days, interest, payoff dates |
+| [RecurrenceEngineTests](API-NET/tests/Fpfl.Api.Tests/RecurrenceEngineTests.cs) · [AccountLedgerCalculatorTests](API-NET/tests/Fpfl.Api.Tests/AccountLedgerCalculatorTests.cs) · [PaydownCalculatorTests](API-NET/tests/Fpfl.Api.Tests/PaydownCalculatorTests.cs) | Calendar rules and payoff math pinned down: month ends, leap days, interest, payoff dates |
 | [AuthServiceTests](API-NET/tests/Fpfl.Api.Tests/AuthServiceTests.cs) · [InMemoryRepositories](API-NET/tests/Fpfl.Api.Tests/InMemoryRepositories.cs) | Services tested against in-memory repositories: token rotation, guest login, wrong passwords |
 | [HealthTests](API-NET/tests/Fpfl.Api.Tests/HealthTests.cs) | The Actuator-shaped health body, the disk-space threshold and the version split |
 
@@ -253,6 +274,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 | [item-form.ts](UI-NG/src/app/features/item-detail/item-form.ts) · [schedule.ts](UI-NG/src/app/features/item-detail/schedule.ts) | One reactive form for all ten recurrence periods, with the API's rules run client-side, and plain-English schedules ("Every other Friday") |
 | [DisplayPage](UI-NG/src/app/features/display/display.ts) · [display-api.ts](UI-NG/src/app/features/display/data-access/display-api.ts) | Data loading with `httpResource` and `computed` signals instead of an NgRx store |
 | [ledger-export.ts](UI-NG/src/app/features/display/export/ledger-export.ts) | Excel export built in the browser with collapsible day groups, the library loaded only on demand |
+| [AccountsPage](UI-NG/src/app/features/accounts/accounts.ts) · [AccountEditor](UI-NG/src/app/features/accounts/account-editor/account-editor.ts) · [AccountDetail](UI-NG/src/app/features/accounts/account-detail/account-detail.ts) | Cards & Loans end to end: account cards, an add / edit dialog choosing which credits and debits pay it, and a page per account for its purchases |
 | [DebtPaydownPage](UI-NG/src/app/features/debt-paydown/debt-paydown.ts) | A complete feature: cards, an editor with live "dollars per paycheck" and "% left" hints, and the same rules as the API |
 | [status-api.ts](UI-NG/src/app/features/admin/status/status-api.ts) | Health probes that tell an API that's down apart from one that answered but was blocked by CORS |
 | [test-providers.ts](UI-NG/src/testing/test-providers.ts) · [auth-interceptor.spec.ts](UI-NG/src/app/core/http/auth-interceptor.spec.ts) · [ledger-export.spec.ts](UI-NG/src/app/features/display/export/ledger-export.spec.ts) | Vitest with the real interceptors against `HttpTestingController`, and logic kept in plain functions so it's tested without rendering |
@@ -312,6 +334,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 - [TimePeriods](UI-NG/src/app/features/time-periods/time-periods.ts) · [time-periods-api.ts](UI-NG/src/app/features/time-periods/data-access/time-periods-api.ts)
 - **Credits & debits** — [ItemList](UI-NG/src/app/features/item-detail/item-list/item-list.ts) · [PeriodPicker](UI-NG/src/app/features/item-detail/period-picker/period-picker.ts) · [ItemEdit](UI-NG/src/app/features/item-detail/item-edit/item-edit.ts) · [item-form.ts](UI-NG/src/app/features/item-detail/item-form.ts) · [schedule.ts](UI-NG/src/app/features/item-detail/schedule.ts) · [item-api.ts](UI-NG/src/app/features/item-detail/data-access/item-api.ts)
 - **Initial amount** — [InitialAmountPage](UI-NG/src/app/features/item-detail/initial-amount/initial-amount.ts) · [initial-amount-api.ts](UI-NG/src/app/features/item-detail/data-access/initial-amount-api.ts)
+- **Cards & Loans** — [AccountsPage](UI-NG/src/app/features/accounts/accounts.ts) · [AccountEditor](UI-NG/src/app/features/accounts/account-editor/account-editor.ts) · [AccountDetail](UI-NG/src/app/features/accounts/account-detail/account-detail.ts) · [accounts.models.ts](UI-NG/src/app/features/accounts/accounts.models.ts) · [account-api.ts](UI-NG/src/app/features/accounts/data-access/account-api.ts) · [AccountsChart](UI-NG/src/app/features/display/accounts/accounts-chart.ts) · [AccountsLedger](UI-NG/src/app/features/display/accounts/accounts-ledger.ts) · [account-ledger.models.ts](UI-NG/src/app/features/display/accounts/account-ledger.models.ts)
 - **Debt Paydown** — [DebtPaydownPage](UI-NG/src/app/features/debt-paydown/debt-paydown.ts) · [debt-paydown.models.ts](UI-NG/src/app/features/debt-paydown/debt-paydown.models.ts) · [debt-api.ts](UI-NG/src/app/features/debt-paydown/data-access/debt-api.ts) · [PaydownChart](UI-NG/src/app/features/display/paydown/paydown-chart.ts) · [PaydownLedger](UI-NG/src/app/features/display/paydown/paydown-ledger.ts) · [paydown.models.ts](UI-NG/src/app/features/display/paydown/paydown.models.ts)
 - **Display (forecast)** — [DisplayPage](UI-NG/src/app/features/display/display.ts) · [display.models.ts](UI-NG/src/app/features/display/display.models.ts) · [LedgerChart](UI-NG/src/app/features/display/chart/chart.ts) · [chart-data.ts](UI-NG/src/app/features/display/chart/chart-data.ts) · [Ledger](UI-NG/src/app/features/display/ledger/ledger.ts) · [ledger-export.ts](UI-NG/src/app/features/display/export/ledger-export.ts) · [display-api.ts](UI-NG/src/app/features/display/data-access/display-api.ts)
 
@@ -320,6 +343,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 - [test-providers.ts](UI-NG/src/testing/test-providers.ts) — shared TestBed providers and envelope helpers
 - [auth.spec.ts](UI-NG/src/app/core/auth/auth.spec.ts) · [auth-interceptor.spec.ts](UI-NG/src/app/core/http/auth-interceptor.spec.ts) · [item-types.spec.ts](UI-NG/src/app/features/item-types/item-types.spec.ts) · [time-periods.spec.ts](UI-NG/src/app/features/time-periods/time-periods.spec.ts)
 - [item-list.spec.ts](UI-NG/src/app/features/item-detail/item-list/item-list.spec.ts) · [item-edit.spec.ts](UI-NG/src/app/features/item-detail/item-edit/item-edit.spec.ts) · [schedule.spec.ts](UI-NG/src/app/features/item-detail/schedule.spec.ts) · [display.spec.ts](UI-NG/src/app/features/display/display.spec.ts) · [ledger.spec.ts](UI-NG/src/app/features/display/ledger/ledger.spec.ts) · [ledger-export.spec.ts](UI-NG/src/app/features/display/export/ledger-export.spec.ts)
+- [accounts.spec.ts](UI-NG/src/app/features/accounts/accounts.spec.ts) · [accounts.models.spec.ts](UI-NG/src/app/features/accounts/accounts.models.spec.ts) · [account-ledger.models.spec.ts](UI-NG/src/app/features/display/accounts/account-ledger.models.spec.ts) · [debt-paydown.spec.ts](UI-NG/src/app/features/debt-paydown/debt-paydown.spec.ts) · [paydown.models.spec.ts](UI-NG/src/app/features/display/paydown/paydown.models.spec.ts)
 - [status-api.spec.ts](UI-NG/src/app/features/admin/status/status-api.spec.ts) · [status.spec.ts](UI-NG/src/app/features/admin/status/status.spec.ts) · [docs.spec.ts](UI-NG/src/app/features/docs/docs.spec.ts) · [admin-guard.spec.ts](UI-NG/src/app/core/auth/admin-guard.spec.ts)
 
 ---
@@ -339,6 +363,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 - [AuthController](API-NET/src/Fpfl.Api/Controllers/AuthController.cs)
 - [UserRolesController](API-NET/src/Fpfl.Api/Controllers/UserRolesController.cs)
 - [ItemsController](API-NET/src/Fpfl.Api/Controllers/ItemsController.cs)
+- [AccountsController](API-NET/src/Fpfl.Api/Controllers/AccountsController.cs)
 - [DebtsController](API-NET/src/Fpfl.Api/Controllers/DebtsController.cs)
 - [InitialAmountController](API-NET/src/Fpfl.Api/Controllers/InitialAmountController.cs)
 - [DisplayController](API-NET/src/Fpfl.Api/Controllers/DisplayController.cs)
@@ -350,7 +375,8 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 
 - **Auth** — [AuthRequests](API-NET/src/Fpfl.Api/Dtos/Auth/AuthRequests.cs) · [AuthResponse](API-NET/src/Fpfl.Api/Dtos/Auth/AuthResponse.cs) · [AuthMapper](API-NET/src/Fpfl.Api/Mappers/AuthMapper.cs)
 - **Item** — [ItemRequest](API-NET/src/Fpfl.Api/Dtos/Items/ItemRequest.cs) · [ItemResponse](API-NET/src/Fpfl.Api/Dtos/Items/ItemResponse.cs) · [InitialAmountDtos](API-NET/src/Fpfl.Api/Dtos/InitialAmounts/InitialAmountDtos.cs) · [ItemMapper](API-NET/src/Fpfl.Api/Mappers/ItemMapper.cs)
-- **Display** — [LedgerDtos](API-NET/src/Fpfl.Api/Dtos/Display/LedgerDtos.cs) · [PaydownDtos](API-NET/src/Fpfl.Api/Dtos/Display/PaydownDtos.cs) · [DisplayMapper](API-NET/src/Fpfl.Api/Mappers/DisplayMapper.cs)
+- **Display** — [LedgerDtos](API-NET/src/Fpfl.Api/Dtos/Display/LedgerDtos.cs) · [PaydownDtos](API-NET/src/Fpfl.Api/Dtos/Display/PaydownDtos.cs) · [AccountLedgerDtos](API-NET/src/Fpfl.Api/Dtos/Display/AccountLedgerDtos.cs) · [DisplayMapper](API-NET/src/Fpfl.Api/Mappers/DisplayMapper.cs)
+- **Account** — [AccountDtos](API-NET/src/Fpfl.Api/Dtos/Accounts/AccountDtos.cs) · [AccountMapper](API-NET/src/Fpfl.Api/Mappers/AccountMapper.cs)
 - **Debt** — [DebtDtos](API-NET/src/Fpfl.Api/Dtos/Debts/DebtDtos.cs) · [DebtMapper](API-NET/src/Fpfl.Api/Mappers/DebtMapper.cs)
 - **ItemType** — [ItemTypeRequests](API-NET/src/Fpfl.Api/Dtos/ItemTypes/ItemTypeRequests.cs) · [ItemTypeResponse](API-NET/src/Fpfl.Api/Dtos/ItemTypes/ItemTypeResponse.cs) · [ItemTypeMapper](API-NET/src/Fpfl.Api/Mappers/ItemTypeMapper.cs)
 - **TimePeriod** — [TimePeriodRequests](API-NET/src/Fpfl.Api/Dtos/TimePeriods/TimePeriodRequests.cs) · [TimePeriodResponse](API-NET/src/Fpfl.Api/Dtos/TimePeriods/TimePeriodResponse.cs) · [TimePeriodMapper](API-NET/src/Fpfl.Api/Mappers/TimePeriodMapper.cs)
@@ -366,6 +392,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 
 ### Fpfl.Items
 
+- **Cards & Loans** — [CreditAccount](API-NET/src/Fpfl.Items/Domain/Entities/CreditAccount.cs) · [AccountPurchase](API-NET/src/Fpfl.Items/Domain/Entities/AccountPurchase.cs) · [AccountPayment](API-NET/src/Fpfl.Items/Domain/Entities/AccountPayment.cs) · [CreditAccountDraft](API-NET/src/Fpfl.Items/Domain/CreditAccountDraft.cs) · [CreditAccountRules](API-NET/src/Fpfl.Items/Domain/CreditAccountRules.cs) · [ICreditAccountService](API-NET/src/Fpfl.Items/Domain/Services/ICreditAccountService.cs) · [CreditAccountService](API-NET/src/Fpfl.Items/Application/Services/CreditAccountService.cs) · [ICreditAccountRepository](API-NET/src/Fpfl.Items/Domain/Repositories/ICreditAccountRepository.cs) · [CreditAccountRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/CreditAccountRepository.cs) · [002_credit_accounts.sql](API-NET/db/002_credit_accounts.sql)
 - **Domain** — [Item](API-NET/src/Fpfl.Items/Domain/Entities/Item.cs) · [ItemRules](API-NET/src/Fpfl.Items/Domain/ItemRules.cs) · [Debt](API-NET/src/Fpfl.Items/Domain/Entities/Debt.cs) · [DebtAllocation](API-NET/src/Fpfl.Items/Domain/Entities/DebtAllocation.cs) · [DebtRules](API-NET/src/Fpfl.Items/Domain/DebtRules.cs) · [IDebtService](API-NET/src/Fpfl.Items/Domain/Services/IDebtService.cs) · [IItemService](API-NET/src/Fpfl.Items/Domain/Services/IItemService.cs) · [IInitialAmountService](API-NET/src/Fpfl.Items/Domain/Services/IInitialAmountService.cs) · [IItemRepository](API-NET/src/Fpfl.Items/Domain/Repositories/IItemRepository.cs) · [ItemType](API-NET/src/Fpfl.Items/Domain/Entities/ItemType.cs) · [TimePeriod](API-NET/src/Fpfl.Items/Domain/Entities/TimePeriod.cs) · [IItemTypeService](API-NET/src/Fpfl.Items/Domain/Services/IItemTypeService.cs) · [ITimePeriodService](API-NET/src/Fpfl.Items/Domain/Services/ITimePeriodService.cs) · [IItemTypeRepository](API-NET/src/Fpfl.Items/Domain/Repositories/IItemTypeRepository.cs) · [ITimePeriodRepository](API-NET/src/Fpfl.Items/Domain/Repositories/ITimePeriodRepository.cs)
 - **Application** — [DebtService](API-NET/src/Fpfl.Items/Application/Services/DebtService.cs) · [ItemService](API-NET/src/Fpfl.Items/Application/Services/ItemService.cs) · [InitialAmountService](API-NET/src/Fpfl.Items/Application/Services/InitialAmountService.cs) · [ItemTypeService](API-NET/src/Fpfl.Items/Application/Services/ItemTypeService.cs) · [TimePeriodService](API-NET/src/Fpfl.Items/Application/Services/TimePeriodService.cs)
 - **Infrastructure** — [ItemsDbContext](API-NET/src/Fpfl.Items/Infrastructure/Persistence/ItemsDbContext.cs) · [ItemRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/ItemRepository.cs) · [DebtRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/DebtRepository.cs) · [001_debt_paydown.sql](API-NET/db/001_debt_paydown.sql) · [ItemTypeRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/ItemTypeRepository.cs) · [TimePeriodRepository](API-NET/src/Fpfl.Items/Infrastructure/Persistence/Repositories/TimePeriodRepository.cs) · [ItemsDatabaseHealthCheck](API-NET/src/Fpfl.Items/Infrastructure/Health/ItemsDatabaseHealthCheck.cs)
@@ -374,6 +401,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 
 - **Engine** — [LedgerBuilder](API-NET/src/Fpfl.Display/Domain/LedgerBuilder.cs) · [RecurrenceEngine](API-NET/src/Fpfl.Display/Domain/Recurrence/RecurrenceEngine.cs) · [IRecurrenceExpander](API-NET/src/Fpfl.Display/Domain/Recurrence/IRecurrenceExpander.cs) · [RecurrenceWindow](API-NET/src/Fpfl.Display/Domain/Recurrence/RecurrenceWindow.cs) · [CalendarMath](API-NET/src/Fpfl.Display/Domain/Recurrence/CalendarMath.cs)
 - **Expanders** — [OneTime](API-NET/src/Fpfl.Display/Domain/Recurrence/OneTimeExpander.cs) · [Daily](API-NET/src/Fpfl.Display/Domain/Recurrence/DailyExpander.cs) · [Weekly](API-NET/src/Fpfl.Display/Domain/Recurrence/WeeklyExpander.cs) · [EveryTwoWeeks](API-NET/src/Fpfl.Display/Domain/Recurrence/EveryTwoWeeksExpander.cs) · [BiMonthly](API-NET/src/Fpfl.Display/Domain/Recurrence/BiMonthlyExpander.cs) · [Monthly](API-NET/src/Fpfl.Display/Domain/Recurrence/MonthlyExpander.cs) · [Quarterly](API-NET/src/Fpfl.Display/Domain/Recurrence/QuarterlyExpander.cs) · [SemiAnnual](API-NET/src/Fpfl.Display/Domain/Recurrence/SemiAnnualExpander.cs) · [Annual](API-NET/src/Fpfl.Display/Domain/Recurrence/AnnualExpander.cs) · [NthWeekday](API-NET/src/Fpfl.Display/Domain/Recurrence/NthWeekdayExpander.cs)
+- **Cards & Loans** — [AccountLedgerCalculator](API-NET/src/Fpfl.Display/Domain/Accounts/AccountLedgerCalculator.cs) · [AccountLedgerModels](API-NET/src/Fpfl.Display/Domain/Accounts/AccountLedgerModels.cs)
 - **Paydown** — [PaydownCalculator](API-NET/src/Fpfl.Display/Domain/Paydown/PaydownCalculator.cs) · [PaydownModels](API-NET/src/Fpfl.Display/Domain/Paydown/PaydownModels.cs)
 - **Application** — [LedgerReadoutService](API-NET/src/Fpfl.Display/Application/Services/LedgerReadoutService.cs)
 
@@ -391,6 +419,7 @@ A guided tour of the codebase. All links are relative to the repository root. Th
 
 ### Tests
 
+- [AccountLedgerCalculatorTests](API-NET/tests/Fpfl.Api.Tests/AccountLedgerCalculatorTests.cs) · [CreditAccountRulesTests](API-NET/tests/Fpfl.Api.Tests/CreditAccountRulesTests.cs) · [AccountResponseSanitizerTests](API-NET/tests/Fpfl.Api.Tests/AccountResponseSanitizerTests.cs)
 - [PaydownCalculatorTests](API-NET/tests/Fpfl.Api.Tests/PaydownCalculatorTests.cs) · [DebtServiceTests](API-NET/tests/Fpfl.Api.Tests/DebtServiceTests.cs) · [InMemoryRepositories](API-NET/tests/Fpfl.Api.Tests/InMemoryRepositories.cs)
 - [RecurrenceEngineTests](API-NET/tests/Fpfl.Api.Tests/RecurrenceEngineTests.cs) · [LedgerBuilderTests](API-NET/tests/Fpfl.Api.Tests/LedgerBuilderTests.cs) · [DisplayMapperTests](API-NET/tests/Fpfl.Api.Tests/DisplayMapperTests.cs) · [ItemRulesTests](API-NET/tests/Fpfl.Api.Tests/ItemRulesTests.cs) · [ItemServiceTests](API-NET/tests/Fpfl.Api.Tests/ItemServiceTests.cs) · [InitialAmountServiceTests](API-NET/tests/Fpfl.Api.Tests/InitialAmountServiceTests.cs)
 - [AuthServiceTests](API-NET/tests/Fpfl.Api.Tests/AuthServiceTests.cs) · [UserRolesServiceTests](API-NET/tests/Fpfl.Api.Tests/UserRolesServiceTests.cs) · [ItemTypeServiceTests](API-NET/tests/Fpfl.Api.Tests/ItemTypeServiceTests.cs) · [TimePeriodServiceTests](API-NET/tests/Fpfl.Api.Tests/TimePeriodServiceTests.cs) · [SanitizerTests](API-NET/tests/Fpfl.Api.Tests/SanitizerTests.cs) · [HealthTests](API-NET/tests/Fpfl.Api.Tests/HealthTests.cs)
@@ -448,11 +477,31 @@ Both applications ship through **GitHub Actions → Azure Container Registry →
 - Services: `fpfl-api-net-service`, `fpfl-ui-ng-service`
 - Ingress: **nginx** routing `api-net.ledger-finance.com` → API and `ui-ng.ledger-finance.com` → UI
 - TLS: **cert-manager** with the shared `letsencrypt-prod` `ClusterIssuer`, storing certs in `fpfl-api-net-tls` / `fpfl-ui-ng-tls`
-- The database connection string and JWT signing key come from the `api-net-secret` Kubernetes secret — never committed to the repo
+- The database connection string and JWT signing key come from the `api-net-secret` Kubernetes secret — never committed to the repo. For V3 its connection string points at **FPFL‑V3**; the signing key was kept, so existing sessions survived the switch
 
 ### **One‑Time Cluster Setup**
 
-[`k8s/setup-fpfl-net.sh`](k8s/setup-fpfl-net.sh) (run once from Azure Cloud Shell) creates the node pool, builds `api-net-secret` from the existing Java database secret plus a freshly generated signing key, and adds the DNS records. It is safe to re‑run.
+[`k8s/setup-fpfl-net.sh`](k8s/setup-fpfl-net.sh) (run once from Azure Cloud Shell) creates the node pool, builds `api-net-secret` from the existing Java database secret plus a freshly generated signing key, and adds the DNS records. It is safe to re‑run. The secret it builds points at the Java database (FPFL‑V2), so a fresh cluster needs the database name changed to FPFL‑V3 afterwards.
+
+### **Moving to V3**
+
+V3 replaced the earlier API‑NET and UI‑NG in place: same images, deployments, node pool and hostnames. The steps, in order:
+
+1. Create **FPFL‑V3** on the Azure server from a dump of FPFL‑V2, then run [`API-NET/db/001_debt_paydown.sql`](API-NET/db/001_debt_paydown.sql) and [`002_credit_accounts.sql`](API-NET/db/002_credit_accounts.sql) against it (both are re‑runnable)
+2. Point `api-net-secret` at FPFL‑V3, keeping its signing key:
+   ```bash
+   get() { kubectl get secret api-net-secret -n fpfl -o "jsonpath={.data.$1}" | base64 -d; }
+   CONN="$(get ConnectionStrings__Fpfl | sed 's/Database=FPFL-V2/Database=FPFL-V3/')"
+   echo "$CONN" | grep -o 'Database=[^;]*'   # check it says FPFL-V3 before going on
+   kubectl create secret generic api-net-secret -n fpfl \
+     --from-literal="ConnectionStrings__Fpfl=$CONN" \
+     --from-literal="Auth__SigningKey=$(get Auth__SigningKey)" \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+3. Add the three GitHub secrets to the repository, then run the API‑NET workflow and the UI‑NG workflow
+4. Only one repository may deploy these images: disable the API‑NET and UI‑NG workflows in any older copy, or its next push puts the old version back
+
+The previous images stay in ACR under their commit SHAs, so `kubectl set image deployment/api-net api-net=fpflacr.azurecr.io/fpflapinetimg:<sha> -n fpfl` (or the same for `ui-ng`) rolls back.
 
 ### **Pipeline Flow**
 
@@ -503,7 +552,7 @@ docker compose up --build
 | UI | <http://localhost:8000> |
 | API | <http://localhost:8100> (Swagger at `/swagger-ui`, health at `/health`) |
 
-Each project also has its own `docker-compose.yml`; UI‑NG adds `docker-compose.prod.yml` for an image pointed at the public API.
+Each project also has its own `docker-compose.yml` for running V3 on its own, beside the earlier version: UI‑NG on <http://localhost:8200> and API‑NET on <http://localhost:8300>. UI‑NG adds `docker-compose.prod.yml` for an image pointed at the public API.
 
 ---
 
@@ -514,9 +563,11 @@ Each project also has its own `docker-compose.yml`; UI‑NG adds `docker-compose
 From the `API-NET` directory, set the two secrets once:
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:Fpfl" "Host=localhost;Port=5432;Database=FPFL-V2;Username=postgres;Password=..." --project src/Fpfl.Api
+dotnet user-secrets set "ConnectionStrings:Fpfl" "Host=localhost;Port=5432;Database=FPFL-V3;Username=postgres;Password=..." --project src/Fpfl.Api
 dotnet user-secrets set "Auth:SigningKey" "<at least 32 random characters>" --project src/Fpfl.Api
 ```
+
+The local FPFL‑V3 database needs the scripts in [`API-NET/db`](API-NET/db) run once (`psql "host=localhost dbname=FPFL-V3 user=postgres" -f db/002_credit_accounts.sql`, and the same for `001`).
 
 Then run it:
 
@@ -571,11 +622,10 @@ In practice, neither build is run by hand for production — pushing to `master`
 
 - The UI and API are developed independently but run together during local development.
 - The API enforces bounded‑context boundaries through separate projects; the UI consumes only the public REST contracts and the `ApiResponse<T>` envelope.
-- PostgreSQL is required for full functionality; the schema is shared with API‑JDK, so don't run EF migrations against it. Tables API‑NET adds (Debt Paydown) come from numbered scripts in [`API-NET/db`](API-NET/db) — run each once against every database (local and Azure) **before** deploying the code that uses it.
+- PostgreSQL is required for full functionality; the schema comes from API‑JDK, so don't run EF migrations against it. Tables API‑NET adds (Debt Paydown, Cards & Loans) come from numbered scripts in [`API-NET/db`](API-NET/db) — run each once against every database (local and Azure) **before** deploying the code that uses it.
 - The UI's API URL is **build‑time** — changing it means rebuilding the image (which is why the workflow passes it as a Docker build arg).
 - PrimeNG 22 uses a license key (the free PrimeUI Community license); it lives in `environment.ts` and ships in the bundle by design.
 - Path filters in the workflows mean a change confined to one application only redeploys that application.
-- `UI-NG/src/app/features` also contains scaffolded, not‑yet‑routed folders (admin status, docs) for the last features still being ported.
 
 ---
 

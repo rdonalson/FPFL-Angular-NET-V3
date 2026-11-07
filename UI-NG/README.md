@@ -7,7 +7,7 @@ It replaces the original version's NgModule/NgRx front end, keeping the same pro
 
 Live at <https://ui-ng.ledger-finance.com> · API at <https://api-net.ledger-finance.com>
 
-> 🚧 **Nearly at parity, and past it.** Everything in UI-TSX is here — credits and debits, the initial amount, and the forecast with its chart and ledger — plus two things UI-TSX doesn't have: **Export to Excel** and **Debt Paydown**. The **Docs** page and the admin **System Status** page now match UI-TSX's too. See [Project Status](#-project-status).
+> 🚧 **Nearly at parity, and past it.** Everything in UI-TSX is here — credits and debits, the initial amount, and the forecast with its chart and ledger — plus three things UI-TSX doesn't have: **Export to Excel**, **Cards & Loans** (V3) and **Debt Paydown**. The **Docs** page and the admin **System Status** page now match UI-TSX's too. See [Project Status](#-project-status).
 
 ---
 
@@ -55,8 +55,9 @@ UI-NG/
  │    │    │    ├── item-types/  # list + admin add / edit / delete
  │    │    │    ├── time-periods/# list + admin add / edit / delete
  │    │    │    ├── item-detail/ # credits & debits (list, period picker, edit) + initial amount
+ │    │    │    ├── accounts/    # Cards & Loans: account cards, add / edit dialog, account page with purchases
  │    │    │    ├── debt-paydown/# tracked debts and the credits allocated to them
- │    │    │    ├── display/     # forecast: date range, summary, chart, ledger, paydown tabs, Excel export
+ │    │    │    ├── display/     # forecast: date range, summary, chart, ledger, cards & loans and paydown tabs, Excel export
  │    │    │    ├── admin/       # System Status page (admin): UI checks + API /health and /info
  │    │    │    └── docs/        # Docs page: overview, architecture, ledger engine, data model, CI/CD
  │    │    ├── app.config.ts     # Providers (replaces AppModule)
@@ -68,7 +69,7 @@ UI-NG/
  │    └── styles.scss            # Global styles and design tokens
  ├── Dockerfile                  # Multi-stage build → unprivileged nginx
  ├── nginx.conf                  # SPA fallback, caching, /healthz
- ├── docker-compose.yml          # Local container run (API at localhost:8100)
+ ├── docker-compose.yml          # Local V3 container run (UI at localhost:8200, API at localhost:8300)
  ├── docker-compose.prod.yml     # Image pointed at the public API
  ├── angular.json
  └── package.json
@@ -136,8 +137,10 @@ Features read data with **`httpResource`** inside a small `data-access` service 
 | `/credits/new` · `/debits/new` | Authenticated | Pick a time period for a new item |
 | `/credits/new/:periodId` · `/debits/new/:periodId` | Authenticated | New item for that period |
 | `/credits/:id/edit` · `/debits/:id/edit` | Authenticated | Edit an item |
+| `/accounts` | Authenticated | Cards & Loans — your credit cards and loans, what's owed, and which credits and debits pay them |
+| `/accounts/:id` | Authenticated | One card or loan — its details and payments, and its purchases to add, edit and delete |
 | `/debt-paydown` | Authenticated | Debt Paydown — track debts, set balances / APR, allocate credits |
-| `/display` | Authenticated | The forecast — summary, chart, ledger, paydown chart / ledger, Excel export |
+| `/display` | Authenticated | The forecast — summary, chart, ledger, cards & loans chart / ledger, paydown chart / ledger, Excel export |
 | `/docs` | Public | Documentation — overview, architecture, ledger engine, data model, CI/CD; links to the user guide, Swagger and GitHub |
 | `/status` | **Admin** | System Status — UI checks, the API's `/health` components and `/info`, 30‑second auto refresh, raw responses |
 | `**` | Public | Not found |
@@ -164,6 +167,10 @@ Implemented today:
   - **Period picker** — ten cards, one per time period, each with an example
   - **Edit** — one reactive form for all ten periods; choosing a period shows only its fields, and the same rules as the API's `ItemRules` run before saving
   - **Initial amount** — the starting balance as a card with inline edit; the API creates $0.00 automatically, so there's no "create" step
+- **`accounts`** — Cards & Loans *(V3)*:
+  - **Cards** per credit card or loan: what's owed (as of a date, with APR and any credit limit), its purchases, and which credits and debits pay it
+  - **Editor** ([`AccountEditor`](src/app/features/accounts/account-editor/account-editor.ts)) — a dialog for the account's details and its payments: each credit sends a fixed amount or a percentage, each debit its whole amount; the same rules as the API's `CreditAccountRules` run before saving
+  - **Account page** ([`AccountDetail`](src/app/features/accounts/account-detail/account-detail.ts), `/accounts/:id`) — the account's details and payments, plus its purchases (One Time, Daily or Weekly) to add, edit and delete
 - **`debt-paydown`** — Debt Paydown setup:
   - **Cards** per tracked debt: its payment and schedule, what's owed (as of a date, with APR), and each allocation ("70% of Paycheck · $1,400.00 each")
   - **Editor** — choose an untracked debit, enter balance / as‑of date / APR, add allocations; each row shows the dollars per occurrence live and how much of that credit other debts already take
@@ -175,8 +182,9 @@ Implemented today:
   - **Summary tiles** — starting, credits, debits, lowest (with date) and ending balance, plus a warning when the balance drops below $0
   - **Chart** — the balance over time, and each day's credits above zero / debits below; colors checked for color‑blind readers
   - **Ledger** — one row per day with expandable items, an "Only days with activity" switch, and expand / collapse all
+  - **Cards & loans chart / Cards & loans ledger** — shown when there are cards or loans: a card per account (owed, purchases, paid, interest, payoff date), every balance over time, and every purchase, payment and interest charge with the balance after it. Money sent from credits also shows on the main ledger as "Card/Loan Payment" debits
   - **Paydown chart / Paydown ledger** — shown when debts are tracked: a card per debt (owed, paid, interest, payoff date), every debt's balance as a stepped line in its own fixed color, and every payment, allocation and interest charge with the balance left, filterable by debt
-  - **Export to Excel** — a port of the original Angular app's export (plus a **Debt Paydown** sheet when debts are tracked): the same ledger as a workbook, each day's items in a collapsed outline group that Excel's +/– buttons open, with real dates and accounting‑formatted amounts
+  - **Export to Excel** — a port of the original Angular app's export (plus a **Cards & Loans** sheet when there are cards or loans, and a **Debt Paydown** sheet when debts are tracked): the same ledger as a workbook, each day's items in a collapsed outline group that Excel's +/– buttons open, with real dates and accounting‑formatted amounts
 
 ---
 
@@ -198,6 +206,7 @@ The goal is the same feature set as [UI-TSX](https://github.com/rdonalson/FPFL-R
 | Initial amount | ✅ Done |
 | Forecasted ledger table + chart with date‑range selection | ✅ Done |
 | Ledger download to Excel with expandable rows | ✅ Done (not in UI-TSX) |
+| Cards & Loans — accounts page, account page with purchases, chart / ledger tabs, Excel sheet *(V3)* | ✅ Done (not in UI-TSX) |
 | Debt Paydown — setup page, paydown chart / ledger tabs, Excel sheet | ✅ Done (not in UI-TSX) |
 | Docs page | ✅ Done |
 | Admin status page (UI + API health) | ✅ Done |
@@ -244,7 +253,7 @@ npm test
 [`nginx.conf`](nginx.conf) adds SPA fallback (`try_files … /index.html`), one‑year caching for hashed bundles, `no-cache` for `index.html`, gzip, basic security headers, and a `/healthz` probe endpoint.
 
 ```bash
-docker compose up --build                              # API at http://localhost:8100, UI at http://localhost:8000
+docker compose up --build                              # UI at http://localhost:8200, calling the V3 API at http://localhost:8300
 docker compose -f docker-compose.prod.yml up --build   # pointed at https://api-net.ledger-finance.com
 ```
 

@@ -9,7 +9,7 @@ A clean, enterprise‑grade, modular .NET platform built with **.NET 10**, **ASP
 
 It replaces the original version's .NET Core 3.1 layered API, bringing over API‑JDK's response envelope, centralized error handling, sanitizers, and JWT auth with refresh‑token rotation.
 
-> ✅ **At parity with API‑JDK, and past it.** Auth, items, the initial amount, and the forecast ledger are all ported — with ownership checks, exact‑cent math, and recurrence fixes API‑JDK lacks — plus **Debt Paydown**, a feature of its own. See [Project Status](#-project-status).
+> ✅ **At parity with API‑JDK, and past it.** Auth, items, the initial amount, and the forecast ledger are all ported — with ownership checks, exact‑cent math, and recurrence fixes API‑JDK lacks — plus two features of its own: **Cards & Loans** (V3) and **Debt Paydown**. See [Project Status](#-project-status).
 
 ---
 
@@ -20,6 +20,9 @@ Provide a modular backend API that stores, manages, and projects user financial 
 
 **Key technologies**
 .NET 10 · ASP.NET Core (controllers) · Entity Framework Core 10 + Npgsql · JWT bearer (`Microsoft.IdentityModel.JsonWebTokens`) · BCrypt.Net‑Next · `Microsoft.AspNetCore.OpenApi` + Swagger UI · ASP.NET Core rate limiting & health checks · xUnit · PostgreSQL
+
+**Database**
+PostgreSQL **FPFL‑V3** — a copy of the FPFL‑V2 database API‑JDK uses, plus the Cards & Loans tables. API‑JDK stays on FPFL‑V2.
 
 **Deployed as**
 A multi‑stage Docker image (`fpflapinetimg`) pushed to Azure Container Registry and rolled out to AKS by GitHub Actions. Live at <https://api-net.ledger-finance.com> · Swagger UI at <https://api-net.ledger-finance.com/swagger-ui>.
@@ -46,10 +49,10 @@ API-NET/
  ├── src/
  │    ├── Fpfl.Api/        # REST API, controllers, DTOs, mappers, envelope, error handling, app bootstrap
  │    ├── Fpfl.Auth/       # Authentication and authorization domain
- │    ├── Fpfl.Items/      # Domain + persistence for items, initial amount, item types, time periods
- │    ├── Fpfl.Display/    # Forecast ledger: recurrence expanders + ledger builder
+ │    ├── Fpfl.Items/      # Domain + persistence for items, initial amount, item types, time periods, cards & loans, debts
+ │    ├── Fpfl.Display/    # Forecast ledger: recurrence expanders, ledger builder, card / loan and paydown calculators
  │    └── Fpfl.Common/     # Shared exceptions and sanitization
- ├── db/                   # SQL scripts for tables API-NET adds to the shared schema
+ ├── db/                   # SQL scripts for tables API-NET adds (001 Debt Paydown, 002 Cards & Loans)
  ├── tests/
  │    └── Fpfl.Api.Tests/  # xUnit tests
  ├── docs/                 # Architecture and ER diagrams
@@ -73,7 +76,7 @@ Inside each bounded context the folders follow the same layering: `Domain/` (ent
 - `InvalidModelStateResponseFactory` returns validation failures in the same envelope; `AuthEnvelopeEvents` does the same for JWT 401/403s
 - Owns the composition root: CORS, authentication/authorization, rate limiting, health checks, static landing page
 
-**Controllers:** `AuthController`, `UserRolesController`, `ItemsController`, `InitialAmountController`, `DebtsController`, `DisplayController`, `ItemTypesController`, `TimePeriodsController`, `ClientLogsController`
+**Controllers:** `AuthController`, `UserRolesController`, `ItemsController`, `InitialAmountController`, `AccountsController`, `DebtsController`, `DisplayController`, `ItemTypesController`, `TimePeriodsController`, `ClientLogsController`
 
 `AuthController`'s register also creates the new user's $0.00 initial amount (best effort — a failure there never fails the sign‑up).
 
@@ -92,6 +95,7 @@ Inside each bounded context the folders follow the same layering: `Domain/` (ent
 - Owns the domain model and invariants for `Item`, `ItemType`, and `TimePeriod`
 - `ItemRules` — every rule an item must meet in one place (instead of ten UI forms, as in UI‑TSX): name 1–150 characters, amount above 0 and rounded to cents, credit or debit only, and the right fields for its time period (real month/day pairs, weekdays 0–6, nth index 1–4 or −1). It returns a clean copy with only that period's fields set, because the ledger reads exactly that set
 - `ItemService` — a user reads and changes only their own items (someone else's answers 404 so ids can't be probed; admins reach all); the owner always comes from the access token, never the body
+- `CreditAccountService` + `CreditAccountRules` — Cards & Loans: a credit card or loan with an opening balance as of a date, APR 0–100% and (cards only) a credit limit; names unique per user; up to 20 payments, each from one of your credits (a fixed amount up to the credit's own amount, or a percentage, with one credit's percentages capped at 100% across your accounts) or a debit (its whole amount, paying only one account); purchases One Time, Daily or Weekly with an optional date range. Someone else's account answers 404
 - `DebtService` + `DebtRules` — Debt Paydown's tracked debts: only your own debits (each tracked once) and credits, balance $0–$1B, APR 0–100%, up to 20 allocations, and no credit more than 100% allocated across all your debts; someone else's debt answers 404
 - `InitialAmountService` — one starting balance per user (item type 3), created at $0.00 on registration or on first read, so the GET never 404s; amounts must be $0 or more
 - Ports‑and‑adapters split: domain `I*Repository` / `I*Service` interfaces, application services, EF Core repositories
@@ -104,7 +108,8 @@ Inside each bounded context the folders follow the same layering: `Domain/` (ent
 - Ten `IRecurrenceExpander`s, one per time period (one‑time, daily, weekly, every two weeks, bi‑monthly, monthly, quarterly, semi‑annual, annual, nth weekday), turn an item into its occurrence dates; `RecurrenceEngine` routes each item to its expander once, and `RecurrenceWindow` narrows the dates to the item's own date range
 - `LedgerBuilder` is pure (no database, no clock): one row per day with credit and debit sums, net, and a running balance starting from the initial amount, with that day's entries nested — sums are `decimal` so cents stay exact
 - `PaydownCalculator` projects each tracked debt: from the entered balance, every occurrence of the debit's own payment and of each allocated credit (its percentage) reduces what's owed, interest (APR ÷ 12) is added at month ends, payments stop at $0, and it looks up to 30 years ahead for the payoff date. Allocations become `LedgerAdjustment`s — extra "Debt Paydown" debits in the main ledger
-- `LedgerReadoutService` loads the user's items and tracked debts, enforces ownership and a 10‑year cap, and hands them to the calculator and the builder
+- `AccountLedgerCalculator` runs each card or loan day by day from its balance date: purchases raise the balance (never touching the bank), each occurrence of a paying credit sends its fixed amount or percentage and each paying debit its whole amount, payments are cut to what's owed, interest (APR ÷ 12) is added at month ends, and it looks up to 30 years ahead for the payoff date. Money sent from credits becomes `LedgerAdjustment`s — "Card/Loan Payment" debits in the main ledger; a debit is already there, so it adds none
+- `LedgerReadoutService` loads the user's items, cards and loans, and tracked debts, enforces ownership and a 10‑year cap, and hands them to the calculator and the builder
 - Replaces the original version's database stored procedure with tested application code, and fixes three API‑JDK bugs on the way: Sunday items threw (`DayOfWeek.of(0)`), every‑two‑weeks dates shifted with the ledger's start date, and any user's ledger could be requested by id
 
 ### **Fpfl.Common** (mirrors `module-common-bc`)
@@ -169,8 +174,13 @@ Errors carry `"data": null` and a `correlationId` that matches the server log en
 | `POST /initial-amount` · `PUT /initial-amount/{id}` | Signed in | Create / change your starting balance |
 | `GET /debts` · `GET /debts/{id}` | Signed in | Your tracked debts with their allocations |
 | `POST /debts` · `PUT /debts/{id}` · `DELETE /debts/{id}` | Signed in | Track a debit / change its balance, APR, date and allocations / stop tracking it |
-| `POST /display/ledger` | Signed in | The forecast: one row per day for `ledgerStartDate`–`ledgerEndDate` (≤ 10 years), including "Debt Paydown" debits |
+| `GET /accounts` · `GET /accounts/{id}` | Signed in | Your credit cards and loans with their purchases and payments |
+| `POST /accounts` · `PUT /accounts/{id}` · `DELETE /accounts/{id}` | Signed in | Add / change (details and the payments, which are replaced as a set) / delete a card or loan |
+| `GET /accounts/{id}/purchases` | Signed in | An account's purchases |
+| `POST /accounts/{id}/purchases` · `PUT …/purchases/{purchaseId}` · `DELETE …/purchases/{purchaseId}` | Signed in | Add / change / delete a purchase (One Time, Daily or Weekly) |
+| `POST /display/ledger` | Signed in | The forecast: one row per day for `ledgerStartDate`–`ledgerEndDate` (≤ 10 years), including "Debt Paydown" and "Card/Loan Payment" debits |
 | `POST /display/paydown` | Signed in | Same body: each tracked debt's daily balances, payments, allocations, interest, totals and payoff date |
+| `POST /display/accounts` | Signed in | Same body: each card or loan's balance per day, its purchases, payments and interest, totals and payoff date |
 | `GET /item-types` · `GET /item-types/{id}` | Public | List / get item types |
 | `POST /item-types` · `PUT /item-types/{id}` · `DELETE /item-types/{id}` | **Admin** | Create / rename or change id / delete |
 | `GET /time-periods` · `GET /time-periods/{id}` | Public | List / get time periods |
@@ -201,7 +211,12 @@ The ledger request and response keep API‑JDK's shape, so UI‑TSX's types work
 
 # 🗄️ PostgreSQL Database Structure
 
-API‑NET connects to the **same PostgreSQL database and `fpfl` schema as API‑JDK**. The schema is owned by API‑JDK (Hibernate `ddl-auto: update`), so EF Core maps onto the existing tables and is **never** used to generate migrations against it.
+API‑NET V3 connects to the **FPFL‑V3** database: a copy of FPFL‑V2, the database API‑JDK uses, with the Cards & Loans tables added. The `fpfl` schema itself comes from API‑JDK (Hibernate `ddl-auto: update`), so EF Core maps onto the existing tables and is **never** used to generate migrations against it; tables only API‑NET uses are created by the numbered, re‑runnable scripts in [`db/`](db).
+
+| Database | Used by | Servers |
+| -------- | ------- | ------- |
+| **FPFL‑V3** | API‑NET (V3) | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
+| FPFL‑V2 | API‑JDK | Same servers |
 
 ---
 
@@ -227,6 +242,18 @@ Stores all user‑defined financial items — credits, debits, and each user's i
 | **annual_moy** / **annual_dom** | Annual month and day |
 | **nth_dow** / **nth_index** | Nth‑weekday pattern (index 1–4, or −1 for last) |
 | **date_range_req** | Whether a date range is required |
+
+---
+
+### **credit_accounts** · **account_purchases** · **account_payments** *(API‑NET only — [`db/002_credit_accounts.sql`](db/002_credit_accounts.sql))*
+
+Cards & Loans' tables. Deleting an account deletes its purchases and payments; deleting a credit or debit deletes its payments (`ON DELETE CASCADE`).
+
+| **Table** | **Columns** |
+| --------- | ----------- |
+| **credit_accounts** | `id`, `user_id`, `name` (unique per user), `kind` (`CreditCard` / `Loan`), `opening_balance` numeric(14,2) ≥ 0, `balance_date`, `apr` numeric(6,3) 0–100, `credit_limit` numeric(14,2) (optional), `created_at` |
+| **account_purchases** | `id`, `fk_account` → `credit_accounts.id`, `name`, `amount` numeric(14,2) > 0, `fk_time_period` → `time_periods.id` (1 One Time, 2 Daily, 3 Weekly), `begin_date`, `end_date`, `weekly_dow` 0–6, `date_range_req`, `created_at` |
+| **account_payments** | `id`, `fk_account` → `credit_accounts.id`, `fk_credit_item` → `items.id` (the paying credit or debit), `amount` numeric(14,2) **or** `percent` numeric(5,2) — exactly one is set; unique per (account, item) |
 
 ---
 
@@ -301,6 +328,7 @@ Application accounts used by `Fpfl.Auth` and referenced by items.
 ## **🔗 Relationships**
 
 - `items.fk_item_type` → `item_types.id` · `items.fk_time_period` → `time_periods.id` · `items.user_id` → `users.user_id`
+- `credit_accounts.user_id` → the owner's `users.user_id` · `account_purchases.fk_account` → `credit_accounts.id` · `account_purchases.fk_time_period` → `time_periods.id` · `account_payments.fk_account` → `credit_accounts.id` · `account_payments.fk_credit_item` → `items.id`
 - `debts.fk_item` → `items.id` · `debt_allocations.fk_debt` → `debts.id` · `debt_allocations.fk_credit_item` → `items.id`
 - `user_roles.user_id` → `users.id` · `user_roles.role_id` → `roles.id`
 - `refresh_tokens.user_id` → `users.id`
@@ -309,17 +337,11 @@ Application accounts used by `Fpfl.Auth` and referenced by items.
 
 ## **🧩 ER Diagram**
 
-### Items (`ItemsDbContext`)
+The whole FPFL‑V3 database in one diagram. `ItemsDbContext` maps `items` with its lookups `item_types` and `time_periods`, Cards & Loans' `credit_accounts` with their `account_purchases` and `account_payments`, and Debt Paydown's `debts` and `debt_allocations`. `AuthDbContext` maps `users`, `user_roles` joining them to `roles`, and their `refresh_tokens`.
 
-`items` with its lookups `item_types` and `time_periods`, plus Debt Paydown's `debts` (one per tracked debit) and `debt_allocations` (each pointing at a debt and a credit item).
+![FPFL-V3 entity relationship diagram](docs/FPFL-ER-V3.png)
 
-![Items entity relationship diagram](docs/FPFL-ER-Item.png)
-
-### Auth (`AuthDbContext`)
-
-`users`, with `user_roles` joining them to `roles`, and their `refresh_tokens`.
-
-![Auth entity relationship diagram](docs/FPFL-ER-Auth.png)
+The earlier per‑context diagrams, from before Cards & Loans, are still in [`docs/`](docs): [items](docs/FPFL-ER-Item.png) and [auth](docs/FPFL-ER-Auth.png).
 
 ---
 
@@ -358,8 +380,15 @@ dotnet build
 Set the secrets once:
 
 ```bash
-dotnet user-secrets set "ConnectionStrings:Fpfl" "Host=localhost;Port=5432;Database=FPFL-V2;Username=postgres;Password=..." --project src/Fpfl.Api
+dotnet user-secrets set "ConnectionStrings:Fpfl" "Host=localhost;Port=5432;Database=FPFL-V3;Username=postgres;Password=..." --project src/Fpfl.Api
 dotnet user-secrets set "Auth:SigningKey" "<at least 32 random characters>" --project src/Fpfl.Api
+```
+
+Run the scripts in [`db/`](db) once against the local FPFL‑V3 database:
+
+```bash
+psql "host=localhost dbname=FPFL-V3 user=postgres" -f db/001_debt_paydown.sql
+psql "host=localhost dbname=FPFL-V3 user=postgres" -f db/002_credit_accounts.sql
 ```
 
 Then run:
@@ -388,7 +417,7 @@ The [`Dockerfile`](Dockerfile) is a two‑stage build: `mcr.microsoft.com/dotnet
 docker compose up --build
 ```
 
-`docker-compose.yml` reads `.env.docker` (Git‑ignored) and maps `8100:8080` (API at <http://localhost:8100>); PostgreSQL on the host is reached through `host.docker.internal`.
+`docker-compose.yml` reads `.env.docker` (Git‑ignored) and maps `8300:8080` (API at <http://localhost:8300>, image `fpflapinetv3img`), so V3 runs beside the earlier version's container on 8100; PostgreSQL on the host is reached through `host.docker.internal`. The root `docker-compose.yml` runs the API on 8100 with the UI.
 
 ---
 
@@ -424,6 +453,9 @@ dotnet test
 - [`DisplayMapperTests`](tests/Fpfl.Api.Tests/DisplayMapperTests.cs) — the ledger JSON matches API‑JDK's shape field by field, and survives the response sanitizer with paydown entries
 - [`PaydownCalculatorTests`](tests/Fpfl.Api.Tests/PaydownCalculatorTests.cs) — allocations, capped last payment, the debit's own payment, monthly interest, same‑day order, windows before / after the balance date, payoff projection
 - [`DebtServiceTests`](tests/Fpfl.Api.Tests/DebtServiceTests.cs) — Debt Paydown rules, the 100%‑per‑credit cap, ownership, and the ledger deducting allocations
+- [`AccountLedgerCalculatorTests`](tests/Fpfl.Api.Tests/AccountLedgerCalculatorTests.cs) — Cards & Loans: purchases, fixed and percentage payments from credits, whole‑amount payments from debits, payments cut to what's owed, monthly interest, payoff dates
+- [`CreditAccountRulesTests`](tests/Fpfl.Api.Tests/CreditAccountRulesTests.cs) — account fields, kinds and credit limits, payment rules and the per‑credit cap
+- [`AccountResponseSanitizerTests`](tests/Fpfl.Api.Tests/AccountResponseSanitizerTests.cs) — account responses pass through the response sanitizer intact
 
 ---
 
@@ -444,6 +476,7 @@ The goal is the same feature set as [API‑JDK](https://github.com/rdonalson/FPF
 | Items (credits / debits with recurrence) | ✅ Done |
 | Initial amount (auto‑created at registration and first read) | ✅ Done |
 | Ledger readout + recurrence expanders (`Fpfl.Display`) | ✅ Done |
+| Cards & Loans — `/accounts`, purchases, `/display/accounts`, "Card/Loan Payment" ledger debits *(new in V3)* | ✅ Done |
 | Debt Paydown — `/debts`, `/display/paydown`, ledger deductions *(new)* | ✅ Done |
 
 ---
@@ -455,7 +488,7 @@ The goal is the same feature set as [API‑JDK](https://github.com/rdonalson/FPF
 - Use `Fpfl.Common` sparingly — only for true cross‑cutting concerns
 - Sanitize user‑supplied strings through the sanitizer (`[StrictText]` / `[LenientText]` / `INoSanitize`) rather than ad‑hoc cleanup
 - Take the user id from the access token's claims, never from the request body
-- Don't add EF Core migrations — the schema is shared with API‑JDK. New tables go in a numbered, re‑runnable script in [`db/`](db), run against local and Azure databases before the code that uses them is deployed
+- Don't add EF Core migrations — the schema comes from API‑JDK. New tables go in a numbered, re‑runnable script in [`db/`](db), run against local and Azure databases before the code that uses them is deployed
 - Never commit `appsettings.*.json` secrets, `.env.docker`, or a real signing key
 - If Visual Studio breaks on domain exceptions while debugging, they are expected — the global handler turns them into 4xx responses (adjust Exception Settings or continue)
 
