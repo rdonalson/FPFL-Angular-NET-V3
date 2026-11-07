@@ -6,7 +6,7 @@ namespace Fpfl.Api.Dtos.Accounts;
 /// <summary>
 ///     Body of POST /accounts and PUT /accounts/{id}. <c>kind</c> is <c>creditCard</c> (default) or <c>loan</c>;
 ///     <c>apr</c> defaults to 0 and <c>balanceDate</c> to today; <c>creditLimit</c> is optional (cards only).
-///     <c>payments</c> replaces the account's payments on update; purchases are managed under
+///     <c>payments</c> (your credits and debits that pay it) replaces the account's payments on update; purchases are managed under
 ///     /accounts/{id}/purchases. The owner comes from the access token.
 /// </summary>
 public sealed record AccountRequest(
@@ -23,10 +23,13 @@ public sealed record AccountRequest(
     [MaxLength(20, ErrorMessage = "An account can have at most 20 payments")]
     IReadOnlyList<AccountPaymentRequest>? Payments);
 
-/// <summary>One of your credits paying the account each time it occurs: send <c>amount</c> or <c>percent</c>, not both.</summary>
+/// <summary>
+///     One of your items paying the account each time it occurs. A credit sends <c>amount</c> or <c>percent</c>
+///     (not both). A debit (e.g. the card's monthly payment) pays its whole amount, so send neither.
+/// </summary>
 public sealed record AccountPaymentRequest(
-    [Required(ErrorMessage = "Each payment needs a credit")]
-    long? CreditItemId,
+    [Required(ErrorMessage = "Each payment needs a credit or debit")]
+    long? ItemId,
     decimal? Amount,
     decimal? Percent);
 
@@ -73,13 +76,17 @@ public sealed record PurchaseResponse(
     int? WeeklyDow,
     bool DateRangeReq);
 
-/// <summary><c>perOccurrence</c> is how much each occurrence of the credit sends (its fixed amount, or its percentage of the credit).</summary>
+/// <summary>
+///     <c>itemTypeId</c> is 1 (credit) or 2 (debit). <c>perOccurrence</c> is how much each occurrence sends: a
+///     credit's fixed amount or its percentage, or a debit's whole amount.
+/// </summary>
 public sealed record AccountPaymentResponse(
     long Id,
-    long CreditItemId,
-    [property: LenientText] string? CreditName,
-    double? CreditAmount,
-    string? CreditPeriod,
+    long ItemId,
+    long? ItemTypeId,
+    [property: LenientText] string? ItemName,
+    double? ItemAmount,
+    string? ItemPeriod,
     decimal? Amount,
     decimal? Percent,
     decimal PerOccurrence);

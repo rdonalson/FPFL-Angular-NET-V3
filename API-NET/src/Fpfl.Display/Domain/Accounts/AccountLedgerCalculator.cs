@@ -13,18 +13,23 @@ namespace Fpfl.Display.Domain.Accounts;
 ///     <list type="bullet">
 ///         <item>The opening balance is what was owed at the end of its date; activity counts from the next day.</item>
 ///         <item>Each occurrence of a purchase adds its amount. Purchases never touch the main bank forecast.</item>
-///         <item>Each occurrence of a paying credit sends its fixed amount, or its percentage of the credit (rounded to cents).</item>
-///         <item>A payment never takes the balance below zero: it's cut to what's owed, and nothing is paid on a zero balance.
+///         <item>Each occurrence of a paying credit sends its fixed amount, or its percentage of the credit (rounded to cents).
 ///               What is actually paid leaves the bank, as a <see cref="LedgerAdjustment" /> on the main ledger.</item>
+///         <item>Each occurrence of a paying debit (e.g. the card's monthly payment) pays its whole amount. The debit is
+///               already on the main ledger, so it adds no adjustment.</item>
+///         <item>A payment never takes the balance below zero: it's cut to what's owed, and nothing is paid on a zero balance.</item>
 ///         <item>Within a day, purchases come first (by name), then payments (by credit name).</item>
 ///         <item>Interest is APR / 12 on the balance at each month end (after that day's activity), while anything is owed.</item>
 ///     </list>
-///     The run starts at the balance date, so a window that starts later still begins from the right balance.
+///     The run starts at the balance date, so a window that starts later still begins from the right balance, and keeps
+///     going past the window (up to <see cref="HorizonYears" />) to find the payoff date.
 /// </remarks>
 public static class AccountLedgerCalculator
 {
     /// <summary>Item-type name shown on the main ledger for money sent to a card or loan.</summary>
     public const string PaymentTypeName = "Card/Loan Payment";
+
+    public const int HorizonYears = 30;
 
     public static AccountLedgerResult Calculate(IEnumerable<Item> items, IEnumerable<CreditAccount> accounts, DateWindow window)
     {
@@ -42,39 +47,44 @@ public static class AccountLedgerCalculator
         return new AccountLedgerResult(results, adjustments.OrderBy(a => a.Date).ThenBy(a => a.Name).ToList());
     }
 
-    private sealed record Scheduled(DateOnly Date, int Order, string SortName, long SourceId, AccountEventKind Kind, decimal Amount, decimal? Percent);
+    private sealed record Scheduled(
+        DateOnly Date, int Order, string SortName, long SourceId, AccountEventKind Kind, decimal Amount, decimal? Percent, bool FromDebit);
 
     private static (AccountLedger, List<LedgerAdjustment>) Run(
         CreditAccount account, IReadOnlyDictionary<long, Item> items, DateWindow window)
     {
         var first = account.BalanceDate.AddDays(1);
+        var last = Max(window.End, account.BalanceDate.AddYears(HorizonYears));
         var scheduled = new List<Scheduled>();
 
-        if (first <= window.End)
         {
-            var simulation = new DateWindow(first, window.End);
+            var simulation = new DateWindow(first, last);
 
             foreach (var purchase in account.Purchases.Where(p => p.Amount > 0))
             {
                 scheduled.AddRange(RecurrenceEngine.Occurrences(PurchaseRules.AsScheduleItem(purchase), simulation)
-                    .Select(date => new Scheduled(date, 0, purchase.Name, purchase.Id, AccountEventKind.Purchase, Money(purchase.Amount), null)));
+                    .Select(date => new Scheduled(date, 0, purchase.Name, purchase.Id, AccountEventKind.Purchase, Money(purchase.Amount), null, false)));
             }
 
             foreach (var payment in account.Payments)
             {
-                if (!items.TryGetValue(payment.CreditItemId, out var credit) || credit.ItemTypeId != ItemRules.Credit)
+                if (!items.TryGetValue(payment.CreditItemId, out var source) || source.ItemTypeId is not (ItemRules.Credit or ItemRules.Debit))
                 {
                     continue;
                 }
 
-                var amount = payment.Percent is { } percent
-                    ? Money(Money(credit.Amount) * Math.Min(percent, 100m) / 100m)
-                    : Money(payment.Amount ?? 0);
+                var fromDebit = source.ItemTypeId == ItemRules.Debit;
+                var amount = fromDebit
+                    ? Money(source.Amount)
+                    : payment.Percent is { } percent
+                        ? Money(Money(source.Amount) * Math.Min(percent, 100m) / 100m)
+                        : Money(payment.Amount ?? 0);
 
                 if (amount > 0)
                 {
-                    scheduled.AddRange(RecurrenceEngine.Occurrences(credit, simulation)
-                        .Select(date => new Scheduled(date, 1, credit.Name ?? string.Empty, credit.Id, AccountEventKind.Payment, amount, payment.Percent)));
+                    scheduled.AddRange(RecurrenceEngine.Occurrences(source, simulation)
+                        .Select(date => new Scheduled(
+                            date, 1, source.Name ?? string.Empty, source.Id, AccountEventKind.Payment, amount, fromDebit ? null : payment.Percent, fromDebit)));
                 }
             }
         }
@@ -85,6 +95,7 @@ public static class AccountLedgerCalculator
 
         var monthlyRate = account.Apr / 100m / 12m;
         var balance = Math.Max(0, account.OpeningBalance);
+        DateOnly? payoff = balance == 0 ? account.BalanceDate : null;
 
         var events = new List<AccountEvent>();
         var adjustments = new List<LedgerAdjustment>();
@@ -98,7 +109,7 @@ public static class AccountLedgerCalculator
 
         var startingBalance = balance;
 
-        for (var day = first; day <= window.End; day = day.AddDays(1))
+        for (var day = first; day <= last; day = day.AddDays(1))
         {
             var inWindow = window.Contains(day);
             if (day == window.Start)
@@ -122,7 +133,7 @@ public static class AccountLedgerCalculator
                     }
 
                     change = -paid;
-                    if (inWindow)
+                    if (inWindow && !entry.FromDebit)
                     {
                         adjustments.Add(new LedgerAdjustment
                         {
@@ -139,6 +150,15 @@ public static class AccountLedgerCalculator
                 }
 
                 balance += change;
+                if (balance == 0 && change < 0)
+                {
+                    payoff ??= day;
+                }
+                else if (balance > 0)
+                {
+                    payoff = null; // a later purchase reopened the balance
+                }
+
                 if (inWindow)
                 {
                     events.Add(new AccountEvent
@@ -171,6 +191,18 @@ public static class AccountLedgerCalculator
             {
                 balances.Add(balance);
             }
+
+            // Past the window, keep going only to find the payoff date.
+            if (day >= window.End && balance == 0)
+            {
+                break;
+            }
+        }
+
+        // A window that ends after a payoff that stopped the loop early stays at zero.
+        while (balances.Count < window.Days)
+        {
+            balances.Add(0);
         }
 
         var ledger = new AccountLedger
@@ -188,11 +220,14 @@ public static class AccountLedgerCalculator
             TotalPurchases = events.Where(e => e.Kind == AccountEventKind.Purchase).Sum(e => e.Amount),
             TotalPaid = -events.Where(e => e.Kind == AccountEventKind.Payment).Sum(e => e.Amount),
             TotalInterest = events.Where(e => e.Kind == AccountEventKind.Interest).Sum(e => e.Amount),
+            PayoffDate = balance == 0 ? payoff : null,
             Events = events,
         };
 
         return (ledger, adjustments);
     }
+
+    private static DateOnly Max(DateOnly a, DateOnly b) => a > b ? a : b;
 
     private static decimal Money(decimal value) => decimal.Round(value, 2, MidpointRounding.AwayFromZero);
 

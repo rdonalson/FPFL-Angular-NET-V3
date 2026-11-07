@@ -16,7 +16,7 @@ public sealed class AccountMapper
         request.Apr,
         request.CreditLimit,
         (request.Payments ?? Array.Empty<AccountPaymentRequest>())
-            .Select(p => new PaymentDraft(p.CreditItemId, p.Amount, p.Percent))
+            .Select(p => new PaymentDraft(p.ItemId, p.Amount, p.Percent))
             .ToList());
 
     public PurchaseDraft ToDraft(PurchaseRequest request) => new(
@@ -47,6 +47,7 @@ public sealed class AccountMapper
             .Select(p => new AccountPaymentResponse(
                 p.Id,
                 p.CreditItemId,
+                p.CreditItem?.ItemTypeId,
                 Sanitizer.Normalize(p.CreditItem?.Name),
                 p.CreditItem?.Amount,
                 p.CreditItem?.TimePeriod?.Name,

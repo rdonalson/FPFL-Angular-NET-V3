@@ -8,7 +8,7 @@ public enum AccountEventKind
     /// <summary>A purchase charged to the account (raises the balance).</summary>
     Purchase,
 
-    /// <summary>Money a credit sent to the account (lowers the balance, leaves the bank).</summary>
+    /// <summary>Money a credit or debit sent to the account (lowers the balance, leaves the bank).</summary>
     Payment,
 
     /// <summary>A month's interest added to the balance.</summary>
@@ -22,7 +22,7 @@ public sealed record AccountEvent
 
     public required AccountEventKind Kind { get; init; }
 
-    /// <summary>The purchase (purchases) or credit item (payments) behind the change; null for interest.</summary>
+    /// <summary>The purchase (purchases) or the credit or debit item (payments) behind the change; null for interest.</summary>
     public long? SourceId { get; init; }
 
     public string? SourceName { get; init; }
@@ -68,6 +68,12 @@ public sealed record AccountLedger
     public required decimal TotalPaid { get; init; }
 
     public required decimal TotalInterest { get; init; }
+
+    /// <summary>
+    ///     The day the balance reaches zero and stays there, which may be after the window (projected up to
+    ///     <see cref="AccountLedgerCalculator.HorizonYears" /> years out). Null if it never does in that time.
+    /// </summary>
+    public DateOnly? PayoffDate { get; init; }
 
     /// <summary>Balance changes within the window, in date order.</summary>
     public required IReadOnlyList<AccountEvent> Events { get; init; }

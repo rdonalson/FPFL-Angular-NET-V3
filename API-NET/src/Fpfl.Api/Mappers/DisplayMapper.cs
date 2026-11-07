@@ -30,6 +30,7 @@ public sealed class DisplayMapper
         account.TotalPurchases,
         account.TotalPaid,
         account.TotalInterest,
+        account.PayoffDate,
         account.Balances,
         account.Events.Select(e => new AccountEventResponse(
             e.Date,

@@ -1,7 +1,7 @@
 import * as ExcelModule from 'exceljs';
 import type { Row, Worksheet } from 'exceljs';
 
-import { makeDay, sampleLedger, samplePaydown } from '../testing-ledger';
+import { makeDay, sampleAccount, sampleLedger, samplePaydown } from '../testing-ledger';
 import { buildLedgerWorkbook, excelDate, ledgerFileName, resolveExcel } from './ledger-export';
 
 describe('ledger export', () => {
@@ -134,5 +134,18 @@ describe('ledger export', () => {
   it('leaves the Debt Paydown sheet out when nothing is tracked', () => {
     const workbook = buildLedgerWorkbook(excel, sampleLedger(), { ...options, paydown: [] });
     expect(workbook.getWorksheet('Debt Paydown')).toBeUndefined();
+  });
+
+  it('adds a Cards & Loans sheet only when there are accounts', () => {
+    expect(buildLedgerWorkbook(excel, sampleLedger(), options).getWorksheet('Cards & Loans')).toBeUndefined();
+
+    const ws = buildLedgerWorkbook(excel, sampleLedger(), { ...options, accounts: [sampleAccount()] }).getWorksheet('Cards & Loans')!;
+    const summary: unknown[] = [];
+    ws.eachRow((row) => {
+      if (row.getCell(1).value === 'Chase Visa') {
+        summary.push(...[1, 2, 3, 4, 5, 6, 7].map((c) => row.getCell(c).value));
+      }
+    });
+    expect(summary).toEqual(['Chase Visa', 1000, 50, 625, 0, 425, 'Nov 1, 2026 (after range)']);
   });
 });

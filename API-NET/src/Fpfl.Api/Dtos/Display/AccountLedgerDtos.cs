@@ -4,7 +4,8 @@ namespace Fpfl.Api.Dtos.Display;
 
 /// <summary>
 ///     One credit card or loan over the requested window (POST /display/accounts, same body as /display/ledger).
-///     <c>balances</c> has one value per day of the window.
+///     <c>balances</c> has one value per day of the window; <c>payoffDate</c> may fall after the window, or be null
+///     if the balance isn't cleared within 30 years.
 /// </summary>
 public sealed record AccountLedgerResponse(
     long AccountId,
@@ -19,12 +20,13 @@ public sealed record AccountLedgerResponse(
     decimal TotalPurchases,
     decimal TotalPaid,
     decimal TotalInterest,
+    DateOnly? PayoffDate,
     IReadOnlyList<decimal> Balances,
     IReadOnlyList<AccountEventResponse> Events);
 
 /// <summary>
 ///     <c>kind</c> is <c>purchase</c>, <c>payment</c> or <c>interest</c>. Purchases and interest are positive;
-///     payments are negative. <c>sourceId</c> is the purchase id (purchases) or the credit item id (payments).
+///     payments are negative. <c>sourceId</c> is the purchase id (purchases) or the credit or debit item id (payments).
 /// </summary>
 public sealed record AccountEventResponse(
     DateOnly Date,

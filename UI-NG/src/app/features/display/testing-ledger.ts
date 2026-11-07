@@ -1,3 +1,4 @@
+import { AccountLedger } from './accounts/account-ledger.models';
 import { LedgerDay, LedgerItem } from './display.models';
 import { DebtPaydown } from './paydown/paydown.models';
 
@@ -63,6 +64,34 @@ export function samplePaydown(overrides: Partial<DebtPaydown> = {}): DebtPaydown
     events: [
       { date: '2026-10-18', kind: 'payment', sourceItemId: 10, sourceName: 'Chase Visa', percent: null, amount: -200, balanceAfter: 800 },
       { date: '2026-10-18', kind: 'allocation', sourceItemId: 20, sourceName: 'Paycheck', percent: 25, amount: -625, balanceAfter: 175 },
+    ],
+    ...overrides,
+  };
+}
+
+/**
+ * Chase Visa over the same three days as sampleLedger(): $1,000 owed, a $50 purchase and 25% of the
+ * $2,500 paycheck ($625) on the 18th, leaving $425.
+ */
+export function sampleAccount(overrides: Partial<AccountLedger> = {}): AccountLedger {
+  return {
+    accountId: 1,
+    name: 'Chase Visa',
+    kind: 'creditCard',
+    apr: 0,
+    creditLimit: 5000,
+    openingBalance: 1000,
+    balanceDate: '2026-10-16',
+    startingBalance: 1000,
+    endingBalance: 425,
+    totalPurchases: 50,
+    totalPaid: 625,
+    totalInterest: 0,
+    payoffDate: '2026-11-01',
+    balances: [1000, 425, 425],
+    events: [
+      { date: '2026-10-18', kind: 'purchase', sourceId: 5, sourceName: 'Groceries', percent: null, amount: 50, balanceAfter: 1050 },
+      { date: '2026-10-18', kind: 'payment', sourceId: 20, sourceName: 'Paycheck', percent: 25, amount: -625, balanceAfter: 425 },
     ],
     ...overrides,
   };

@@ -1,0 +1,61 @@
+<div class="paydown-cards">
+  @for (account of accounts(); track account.accountId; let i = $index) {
+    <article class="paydown-card" [style.--debt-color]="color(i)">
+      <h3 class="paydown-card__name">
+        <span class="paydown-card__swatch" aria-hidden="true"></span>
+        <a class="paydown-card__link" [routerLink]="['/accounts', account.accountId]">{{ account.name }}</a>
+      </h3>
+      <dl class="paydown-card__figures">
+        <div>
+          <dt>Owed</dt>
+          <dd>{{ account.startingBalance | currency: 'USD' }} → <strong>{{ account.endingBalance | currency: 'USD' }}</strong></dd>
+        </div>
+        @if (account.totalPurchases > 0) {
+          <div>
+            <dt>Purchases</dt>
+            <dd class="paydown-card__interest">{{ account.totalPurchases | currency: 'USD' }}</dd>
+          </div>
+        }
+        <div>
+          <dt>Paid</dt>
+          <dd class="paydown-card__paid">{{ account.totalPaid | currency: 'USD' }}</dd>
+        </div>
+        @if (account.totalInterest > 0) {
+          <div>
+            <dt>Interest</dt>
+            <dd class="paydown-card__interest">{{ account.totalInterest | currency: 'USD' }}</dd>
+          </div>
+        }
+        @if (utilization(account); as used) {
+          <div>
+            <dt>Of limit</dt>
+            <dd [class.paydown-card__interest]="used > 30">{{ used }}%</dd>
+          </div>
+        }
+      </dl>
+      <p class="paydown-card__payoff" [class.paydown-card__payoff--never]="status(account, windowEnd()) === 'never'">
+        @switch (status(account, windowEnd())) {
+          @case ('paid') {
+            <i class="pi pi-check-circle" aria-hidden="true"></i> Paid off {{ formatDate(account.payoffDate) }}
+          }
+          @case ('later') {
+            <i class="pi pi-calendar" aria-hidden="true"></i> Paid off {{ formatDate(account.payoffDate) }} (after this range)
+          }
+          @default {
+            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i> Not cleared within 30 years at this rate
+          }
+        }
+      </p>
+    </article>
+  }
+</div>
+
+<figure class="paydown-chart">
+  <figcaption class="paydown-chart__title">Balance owed</figcaption>
+  <p-chart type="line" [data]="chart().data" [options]="chart().options" height="320px" ariaLabel="Balance owed on each card or loan by day" />
+</figure>
+
+<p class="paydown-note">
+  Payments also appear on the main ledger as "Card/Loan Payment" debits. Purchases never touch the bank. The Cards &amp; loans
+  ledger tab lists every change.
+</p>

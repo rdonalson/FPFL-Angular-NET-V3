@@ -25,6 +25,18 @@ export const routes: Routes = [
   ...itemRoutes('credits', ITEM_TYPE.credit, 'Credit'),
   ...itemRoutes('debits', ITEM_TYPE.debit, 'Debit'),
   {
+    path: 'accounts',
+    title: 'Cards & Loans | FPFL',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/accounts/accounts').then((m) => m.AccountsPage),
+  },
+  {
+    path: 'accounts/:id',
+    title: 'Card or Loan | FPFL',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/accounts/account-detail/account-detail').then((m) => m.AccountDetail),
+  },
+  {
     path: 'debt-paydown',
     title: 'Debt Paydown | FPFL',
     canActivate: [authGuard],

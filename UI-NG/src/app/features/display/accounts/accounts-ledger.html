@@ -1,0 +1,55 @@
+<div class="paydown-ledger__toolbar">
+  <label for="accounts-filter" class="paydown-ledger__label">Show</label>
+  <p-select
+    inputId="accounts-filter"
+    [options]="filterOptions()"
+    optionLabel="label"
+    optionValue="value"
+    [ngModel]="accountFilter()"
+    (ngModelChange)="accountFilter.set($event)"
+    appendTo="body"
+  />
+  <span class="paydown-ledger__count">{{ rows().length }} {{ rows().length === 1 ? 'entry' : 'entries' }}</span>
+</div>
+
+<p-table
+  class="paydown-ledger__table"
+  [value]="rows()"
+  dataKey="key"
+  [stripedRows]="true"
+  [paginator]="rows().length > 31"
+  [rows]="31"
+  [tableStyle]="{ 'min-width': '40rem' }"
+>
+  <ng-template #header>
+    <tr>
+      <th>Date</th>
+      <th>Card / loan</th>
+      <th>Activity</th>
+      <th class="col-money">Amount</th>
+      <th class="col-money">Balance after</th>
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-row>
+    <tr class="paydown-row">
+      <td class="paydown-row__date">{{ longDay(row.event.date) }}</td>
+      <td class="paydown-row__debt">
+        <span class="paydown-row__swatch" [style.background]="color(row.accountIndex)" aria-hidden="true"></span>{{ row.accountName }}
+      </td>
+      <td class="paydown-row__activity">{{ row.activity }}</td>
+      <td class="col-money paydown-row__amount" [class.paydown-row__amount--interest]="row.event.kind !== 'payment'">
+        {{ row.event.kind === 'payment' ? '−' : '+' }}{{ abs(row.event.amount) | currency: 'USD' }}
+      </td>
+      <td class="col-money paydown-row__balance" [class.paydown-row__balance--zero]="row.event.balanceAfter === 0">
+        {{ row.event.balanceAfter === 0 ? 'Paid off' : (row.event.balanceAfter | currency: 'USD') }}
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td colspan="5" class="paydown-ledger__empty">No purchases, payments or interest fall in this range.</td>
+    </tr>
+  </ng-template>
+</p-table>

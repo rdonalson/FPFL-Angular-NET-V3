@@ -40,7 +40,7 @@ public sealed record LedgerItemResponse(
     int Year,
     DateOnly OccurrenceDate,
     long FkItemType,
-    string? ItemType,
+    [property: LenientText] string? ItemType, // card/loan payments carry "Card/Loan Payment" here
     [property: LenientText] string? Period, // paydown entries carry "25% of Paycheck" here
     [property: LenientText] string? Name,
     decimal Amount);

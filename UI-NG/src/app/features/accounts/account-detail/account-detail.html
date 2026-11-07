@@ -1,0 +1,288 @@
+<section class="page">
+  <header class="page__header">
+    <div>
+      <a class="page__back" routerLink="/accounts">
+        <i class="pi pi-arrow-left" aria-hidden="true"></i>
+        Cards &amp; Loans
+      </a>
+      @if (account(); as a) {
+        <h1 class="page__title">
+          <span class="accounts__badge" aria-hidden="true"><i [class]="kindIcon(a.kind)"></i></span>
+          {{ a.name }}
+        </h1>
+        <p class="page__subtitle">
+          {{ kindLabel(a.kind) }} · {{ a.openingBalance | currency: 'USD' }} owed as of {{ formatDate(a.balanceDate) }}
+          @if (a.apr > 0) {
+            · {{ formatPercent(a.apr) }} APR
+          }
+          @if (a.creditLimit !== null) {
+            · {{ a.creditLimit | currency: 'USD' : 'symbol' : '1.0-0' }} limit
+          }
+        </p>
+      } @else {
+        <h1 class="page__title">Card or loan</h1>
+      }
+    </div>
+
+    @if (account(); as a) {
+      <div class="page__actions">
+        <p-button icon="pi pi-plus" label="Add purchase" (onClick)="openNew()" />
+        <p-button icon="pi pi-pencil" label="Edit" [outlined]="true" (onClick)="editingAccount.set(a)" />
+        <p-button icon="pi pi-trash" severity="danger" [text]="true" ariaLabel="Delete this card or loan" (onClick)="confirmDelete(a)" />
+      </div>
+    }
+  </header>
+
+  @if (loadError(); as err) {
+    <p-message severity="error" class="page__error">
+      {{ err.message }}
+      @if (err.correlationId) {
+        <span class="page__correlation">Reference: {{ err.correlationId }}</span>
+      }
+    </p-message>
+  }
+
+  @if (account(); as a) {
+    <div class="detail">
+      <div class="page__card detail__purchases">
+        <h2 class="detail__heading">Purchases</h2>
+        <p-table [value]="a.purchases" dataKey="id" [stripedRows]="true" [paginator]="a.purchases.length > 15" [rows]="15" [tableStyle]="{ 'min-width': '34rem' }">
+          <ng-template #header>
+            <tr>
+              <th>Purchase</th>
+              <th>When</th>
+              <th class="col-money">Amount</th>
+              <th class="col-actions"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </ng-template>
+          <ng-template #body let-purchase>
+            <tr>
+              <td class="detail__name">{{ purchase.name }}</td>
+              <td class="detail__when">{{ describePurchase(purchase) }}</td>
+              <td class="col-money row__money--buy">{{ purchase.amount | currency: 'USD' }}</td>
+              <td class="col-actions">
+                <p-button icon="pi pi-pencil" [text]="true" [rounded]="true" [ariaLabel]="'Edit ' + purchase.name" (onClick)="openEdit(purchase)" />
+                <p-button icon="pi pi-trash" severity="danger" [text]="true" [rounded]="true" [ariaLabel]="'Delete ' + purchase.name" (onClick)="confirmDelete(purchase)" />
+              </td>
+            </tr>
+          </ng-template>
+          <ng-template #emptymessage>
+            <tr>
+              <td colspan="4" class="page__empty">
+                No purchases yet. Add one-time, daily or weekly purchases charged to this {{ a.kind === 'loan' ? 'loan' : 'card' }}.
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </div>
+
+      <aside class="page__card detail__payments">
+        <h2 class="detail__heading">Paid by</h2>
+        @if (a.payments.length === 0) {
+          <p class="account__none">Nothing pays this yet. Use Edit to choose a credit or debit.</p>
+        } @else {
+          <ul class="rows">
+            @for (payment of a.payments; track payment.id) {
+              <li class="row">
+                <span class="row__lead">
+                  @if (payment.itemTypeId === debitType) {
+                    <i class="pi pi-arrow-up-right" aria-hidden="true"></i>
+                  } @else if (payment.percent !== null) {
+                    {{ formatPercent(payment.percent) }}
+                  } @else {
+                    <i class="pi pi-dollar" aria-hidden="true"></i>
+                  }
+                </span>
+                <span class="row__main">
+                  <strong>{{ payment.itemName }}</strong>
+                  <span class="row__sub">{{ payment.itemPeriod }}</span>
+                </span>
+                <span class="row__money row__money--pay">{{ payment.perOccurrence | currency: 'USD' }}</span>
+              </li>
+            }
+          </ul>
+        }
+        <p-button routerLink="/display" icon="pi pi-chart-line" label="See it in the forecast" [text]="true" size="small" />
+      </aside>
+    </div>
+  } @else if (accountResource.isLoading()) {
+    <div class="page__card"><p class="page__empty">Loading…</p></div>
+  }
+</section>
+
+<!-- Add / edit purchase -->
+<p-dialog
+  [header]="editorTitle()"
+  [visible]="editing() !== null"
+  (visibleChange)="$event || closeEditor()"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '34rem' }"
+  [breakpoints]="{ '640px': '95vw' }"
+>
+  @if (editing() !== null) {
+    <form class="editor" (ngSubmit)="save()" novalidate>
+      <div class="editor__grid">
+        <div class="editor__field editor__field--wide">
+          <label for="purchase-name">What for</label>
+          <input
+            pInputText
+            id="purchase-name"
+            name="name"
+            maxlength="150"
+            placeholder="e.g. Groceries, Gas, New laptop"
+            [ngModel]="form().name"
+            (ngModelChange)="patch({ name: $event })"
+            [fluid]="true"
+          />
+        </div>
+
+        <div class="editor__field">
+          <label for="purchase-amount">Amount</label>
+          <p-inputnumber
+            inputId="purchase-amount"
+            name="amount"
+            mode="currency"
+            currency="USD"
+            locale="en-US"
+            placeholder="$0.00"
+            [ngModel]="form().amount"
+            (ngModelChange)="patch({ amount: $event })"
+            [fluid]="true"
+          />
+        </div>
+
+        <div class="editor__field">
+          <span class="editor__label" id="purchase-period">How often</span>
+          <p-selectbutton
+            name="fkPeriod"
+            [options]="periods"
+            optionLabel="label"
+            optionValue="value"
+            [allowEmpty]="false"
+            [ngModel]="form().fkPeriod"
+            (ngModelChange)="patch({ fkPeriod: $event })"
+            ariaLabelledBy="purchase-period"
+          />
+        </div>
+
+        @if (form().fkPeriod === PERIOD.oneTime) {
+          <div class="editor__field">
+            <label for="purchase-date">Date</label>
+            <p-datepicker
+              inputId="purchase-date"
+              name="beginDate"
+              [ngModel]="form().beginDate"
+              (ngModelChange)="patch({ beginDate: $event })"
+              dateFormat="M d, yy"
+              [showIcon]="true"
+              [fluid]="true"
+              appendTo="body"
+            />
+          </div>
+        }
+
+        @if (form().fkPeriod === PERIOD.weekly) {
+          <div class="editor__field">
+            <label for="purchase-dow">Day of the week</label>
+            <p-select
+              inputId="purchase-dow"
+              name="weeklyDow"
+              [options]="weekdays"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Choose a day"
+              [ngModel]="form().weeklyDow"
+              (ngModelChange)="patch({ weeklyDow: $event })"
+              [fluid]="true"
+              appendTo="body"
+            />
+          </div>
+        }
+
+        @if (form().fkPeriod !== PERIOD.oneTime) {
+          <div class="editor__field editor__field--wide editor__range">
+            <p-toggleswitch inputId="purchase-range" name="dateRangeReq" [ngModel]="form().dateRangeReq" (ngModelChange)="patch({ dateRangeReq: $event })" />
+            <label for="purchase-range">Only between two dates</label>
+          </div>
+
+          @if (form().dateRangeReq) {
+            <div class="editor__field">
+              <label for="purchase-begin">First date</label>
+              <p-datepicker
+                inputId="purchase-begin"
+                name="beginDate"
+                [ngModel]="form().beginDate"
+                (ngModelChange)="patch({ beginDate: $event })"
+                dateFormat="M d, yy"
+                [showIcon]="true"
+                [fluid]="true"
+                appendTo="body"
+              />
+            </div>
+            <div class="editor__field">
+              <label for="purchase-end">Last date</label>
+              <p-datepicker
+                inputId="purchase-end"
+                name="endDate"
+                [ngModel]="form().endDate"
+                (ngModelChange)="patch({ endDate: $event })"
+                dateFormat="M d, yy"
+                [showIcon]="true"
+                [fluid]="true"
+                appendTo="body"
+              />
+            </div>
+          }
+        }
+      </div>
+
+      @if (problem(); as message) {
+        <p-message severity="error" class="editor__problem">{{ message }}</p-message>
+      }
+
+      <div class="editor__actions">
+        <p-button label="Cancel" [text]="true" [disabled]="saving()" (onClick)="closeEditor()" />
+        <p-button type="submit" [label]="editing() === 'new' ? 'Add purchase' : 'Save'" icon="pi pi-check" [loading]="saving()" />
+      </div>
+    </form>
+  }
+</p-dialog>
+
+<app-account-editor
+  [account]="editingAccount()"
+  [accounts]="accounts()"
+  [credits]="credits()"
+  [debits]="debits()"
+  (saved)="onAccountSaved()"
+  (closed)="editingAccount.set(null)"
+/>
+
+<p-dialog
+  [header]="pendingDelete() && isPurchase(pendingDelete()!) ? 'Delete purchase' : 'Delete card or loan'"
+  [visible]="pendingDelete() !== null"
+  (visibleChange)="$event || cancelDelete()"
+  [modal]="true"
+  [draggable]="false"
+  [dismissableMask]="true"
+  [style]="{ width: '26rem' }"
+  [breakpoints]="{ '640px': '95vw' }"
+>
+  @if (pendingDelete(); as target) {
+    @if (deleteError(); as message) {
+      <p-message severity="error" class="editor__problem">{{ message }}</p-message>
+    }
+    @if (isPurchase(target)) {
+      <p>Delete the purchase <strong>{{ target.name }}</strong>?</p>
+    } @else {
+      <p>
+        Delete <strong>{{ target.name }}</strong> with all its purchases? The forecast stops deducting its payments. Your credits
+        and debits stay.
+      </p>
+    }
+    <div class="editor__actions">
+      <p-button label="Cancel" [text]="true" [disabled]="deleting()" (onClick)="cancelDelete()" />
+      <p-button label="Delete" icon="pi pi-trash" severity="danger" [loading]="deleting()" (onClick)="delete()" />
+    </div>
+  }
+</p-dialog>

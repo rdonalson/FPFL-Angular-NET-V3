@@ -110,6 +110,10 @@
         <p-tablist>
           <p-tab value="chart"><i class="pi pi-chart-line" aria-hidden="true"></i> Chart</p-tab>
           <p-tab value="ledger"><i class="pi pi-list" aria-hidden="true"></i> Ledger</p-tab>
+          @if (accounts().length > 0) {
+            <p-tab value="accounts-chart"><i class="pi pi-credit-card" aria-hidden="true"></i> Cards &amp; loans chart</p-tab>
+            <p-tab value="accounts-ledger"><i class="pi pi-list-check" aria-hidden="true"></i> Cards &amp; loans ledger</p-tab>
+          }
           @if (paydown().length > 0) {
             <p-tab value="paydown-chart"><i class="pi pi-credit-card" aria-hidden="true"></i> Paydown chart</p-tab>
             <p-tab value="paydown-ledger"><i class="pi pi-list-check" aria-hidden="true"></i> Paydown ledger</p-tab>
@@ -122,6 +126,14 @@
           <p-tabpanel value="ledger" class="display__ledger-panel">
             <app-ledger [days]="days()" />
           </p-tabpanel>
+          @if (accounts().length > 0) {
+            <p-tabpanel value="accounts-chart">
+              <app-accounts-chart [accounts]="accounts()" [days]="days()" />
+            </p-tabpanel>
+            <p-tabpanel value="accounts-ledger">
+              <app-accounts-ledger [accounts]="accounts()" />
+            </p-tabpanel>
+          }
           @if (paydown().length > 0) {
             <p-tabpanel value="paydown-chart">
               <app-paydown-chart [debts]="paydown()" [days]="days()" />

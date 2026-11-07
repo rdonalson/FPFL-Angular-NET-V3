@@ -1,0 +1,240 @@
+<p-dialog
+  [header]="title()"
+  [visible]="account() !== null"
+  (visibleChange)="$event || close()"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '42rem' }"
+  [breakpoints]="{ '640px': '95vw' }"
+>
+  @if (account() !== null) {
+    <form class="editor" (ngSubmit)="save()" novalidate>
+      <div class="editor__grid">
+        <div class="editor__field editor__field--wide">
+          <label for="account-name">Name</label>
+          <input
+            pInputText
+            id="account-name"
+            name="name"
+            maxlength="150"
+            placeholder="e.g. Chase Visa, Car Loan"
+            [ngModel]="form().name"
+            (ngModelChange)="patch({ name: $event })"
+            [fluid]="true"
+          />
+        </div>
+
+        <div class="editor__field editor__field--wide">
+          <span class="editor__label" id="account-kind">Kind</span>
+          <p-selectbutton
+            name="kind"
+            [options]="kinds"
+            optionLabel="label"
+            optionValue="value"
+            [allowEmpty]="false"
+            [ngModel]="form().kind"
+            (ngModelChange)="patch({ kind: $event })"
+            ariaLabelledBy="account-kind"
+          >
+            <ng-template #item let-option>
+              <i [class]="option.icon" aria-hidden="true"></i>
+              <span>{{ option.label }}</span>
+            </ng-template>
+          </p-selectbutton>
+        </div>
+
+        <div class="editor__field">
+          <label for="account-balance">Balance owed</label>
+          <p-inputnumber
+            inputId="account-balance"
+            name="openingBalance"
+            mode="currency"
+            currency="USD"
+            locale="en-US"
+            placeholder="$0.00"
+            [ngModel]="form().openingBalance"
+            (ngModelChange)="patch({ openingBalance: $event })"
+            [fluid]="true"
+          />
+        </div>
+
+        <div class="editor__field">
+          <label for="account-date">As of</label>
+          <p-datepicker
+            inputId="account-date"
+            name="balanceDate"
+            [ngModel]="form().balanceDate"
+            (ngModelChange)="patch({ balanceDate: $event })"
+            dateFormat="M d, yy"
+            [showIcon]="true"
+            [fluid]="true"
+            appendTo="body"
+          />
+        </div>
+
+        <div class="editor__field">
+          <label for="account-apr">APR</label>
+          <p-inputnumber
+            inputId="account-apr"
+            name="apr"
+            suffix="%"
+            [minFractionDigits]="0"
+            [maxFractionDigits]="3"
+            [min]="0"
+            [max]="100"
+            placeholder="0%"
+            [ngModel]="form().apr"
+            (ngModelChange)="patch({ apr: $event })"
+            [fluid]="true"
+          />
+          <small class="editor__hint">Charged monthly. Leave 0 for none.</small>
+        </div>
+
+        @if (form().kind === 'creditCard') {
+          <div class="editor__field">
+            <label for="account-limit">Credit limit <span class="editor__optional">(optional)</span></label>
+            <p-inputnumber
+              inputId="account-limit"
+              name="creditLimit"
+              mode="currency"
+              currency="USD"
+              locale="en-US"
+              placeholder="None"
+              [ngModel]="form().creditLimit"
+              (ngModelChange)="patch({ creditLimit: $event })"
+              [fluid]="true"
+            />
+          </div>
+        }
+      </div>
+
+      <fieldset class="editor__payments">
+        <legend>Payments</legend>
+        <p class="editor__hint">
+          Each time a credit comes in, a share of it pays this down. A debit, such as the card's monthly payment, pays its
+          whole amount. Payments come out of the bank forecast.
+        </p>
+
+        @for (payment of form().payments; track payment.key; let i = $index) {
+          <div class="editor__payment">
+            <p-select
+              [inputId]="'pay-item-' + i"
+              [name]="'item' + payment.key"
+              [options]="itemOptions()"
+              optionLabel="label"
+              optionValue="id"
+              placeholder="Choose a credit or debit"
+              [filter]="itemOptions().length > 8"
+              filterBy="label"
+              [ngModel]="payment.itemId"
+              (ngModelChange)="chooseItem(payment.key, $event)"
+              [fluid]="true"
+              appendTo="body"
+              [ariaLabel]="'Item for payment ' + (i + 1)"
+            >
+              <ng-template #item let-option>
+                <span class="editor__option">
+                  {{ option.label }}
+                  <span class="editor__option-group">{{ option.group === 'Credits' ? 'credit' : 'debit' }}</span>
+                </span>
+              </ng-template>
+            </p-select>
+
+            @if (payment.mode === 'whole') {
+              <span class="editor__whole">Whole amount</span>
+            } @else {
+              <div class="editor__how">
+                <p-selectbutton
+                  [name]="'mode' + payment.key"
+                  [options]="creditModes"
+                  optionLabel="label"
+                  optionValue="value"
+                  [allowEmpty]="false"
+                  size="small"
+                  [ngModel]="payment.mode"
+                  (ngModelChange)="patchPayment(payment.key, { mode: $event })"
+                  [ariaLabel]="'Percentage or amount for payment ' + (i + 1)"
+                />
+                @if (payment.mode === 'percent') {
+                  <p-inputnumber
+                    [inputId]="'pay-percent-' + i"
+                    [name]="'percent' + payment.key"
+                    suffix="%"
+                    [minFractionDigits]="0"
+                    [maxFractionDigits]="2"
+                    [min]="0"
+                    [max]="100"
+                    placeholder="%"
+                    [ngModel]="payment.percent"
+                    (ngModelChange)="patchPayment(payment.key, { percent: $event })"
+                    [fluid]="true"
+                    [ariaLabel]="'Percentage for payment ' + (i + 1)"
+                  />
+                } @else {
+                  <p-inputnumber
+                    [inputId]="'pay-amount-' + i"
+                    [name]="'amount' + payment.key"
+                    mode="currency"
+                    currency="USD"
+                    locale="en-US"
+                    placeholder="$0.00"
+                    [ngModel]="payment.amount"
+                    (ngModelChange)="patchPayment(payment.key, { amount: $event })"
+                    [fluid]="true"
+                    [ariaLabel]="'Amount for payment ' + (i + 1)"
+                  />
+                }
+              </div>
+            }
+
+            <p-button
+              icon="pi pi-times"
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              [ariaLabel]="'Remove payment ' + (i + 1)"
+              (onClick)="removePayment(payment.key)"
+            />
+
+            @if (payment.itemId !== null) {
+              <small class="editor__share">
+                @if (share(payment) > 0) {
+                  {{ share(payment) | currency: 'USD' }} each time ·
+                }
+                {{ schedule(payment.itemId) }}
+                @if (payment.mode === 'percent' && taken(payment.itemId) > 0) {
+                  <span class="editor__left">
+                    · {{ formatPercent(100 - taken(payment.itemId)) }} left (other accounts take {{ formatPercent(taken(payment.itemId)) }})
+                  </span>
+                }
+              </small>
+            }
+          </div>
+        } @empty {
+          <p class="editor__none">None yet. Without a payment the balance only grows with purchases and interest.</p>
+        }
+
+        <p-button
+          icon="pi pi-plus"
+          label="Add payment"
+          [text]="true"
+          size="small"
+          [disabled]="itemOptions().length === 0 || form().payments.length >= maxPayments"
+          (onClick)="addPayment()"
+        />
+        @if (itemOptions().length === 0) {
+          <small class="editor__hint">Add a <a routerLink="/credits">credit</a> or <a routerLink="/debits">debit</a> first to pay from it.</small>
+        }
+      </fieldset>
+
+      @if (problem(); as message) {
+        <p-message severity="error" class="editor__problem">{{ message }}</p-message>
+      }
+
+      <div class="editor__actions">
+        <p-button label="Cancel" [text]="true" [disabled]="saving()" (onClick)="close()" />
+        <p-button type="submit" [label]="account() === 'new' ? 'Add' : 'Save'" icon="pi pi-check" [loading]="saving()" />
+      </div>
+    </form>
+  }
+</p-dialog>

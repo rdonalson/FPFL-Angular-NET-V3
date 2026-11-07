@@ -118,17 +118,34 @@ public static class CreditAccountRules
         {
             if (payment.CreditItemId is not { } creditId || !ownerItems.TryGetValue(creditId, out var credit))
             {
-                throw Invalid("Each payment needs one of your credits");
+                throw Invalid("Each payment needs one of your credits or debits");
             }
 
-            if (credit.ItemTypeId != ItemRules.Credit)
+            if (credit.ItemTypeId is not (ItemRules.Credit or ItemRules.Debit))
             {
-                throw Invalid($"\"{credit.Name}\" is not a credit");
+                throw Invalid($"\"{credit.Name}\" is not a credit or a debit");
             }
 
             if (result.Any(p => p.CreditItemId == creditId))
             {
                 throw Invalid($"\"{credit.Name}\" pays this account more than once");
+            }
+
+            if (credit.ItemTypeId == ItemRules.Debit)
+            {
+                // A debit (e.g. the card's monthly payment) pays its whole amount; it's stored as 100%.
+                if (payment.Amount is not null || payment.Percent is not (null or 100m))
+                {
+                    throw Invalid($"\"{credit.Name}\" is a debit: it pays its whole amount, so leave amount and percentage empty");
+                }
+
+                if (taken.GetValueOrDefault(creditId) > 0)
+                {
+                    throw Invalid($"\"{credit.Name}\" already pays another account");
+                }
+
+                result.Add(new AccountPayment { CreditItemId = creditId, Percent = 100m });
+                continue;
             }
 
             switch (payment)

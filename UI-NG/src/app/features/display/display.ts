@@ -10,6 +10,8 @@ import { TabsModule } from 'primeng/tabs';
 
 import { ApiError, errorMessage } from '../../core/api/api-response';
 import { formatDate } from '../item-detail/schedule';
+import { AccountsChart } from './accounts/accounts-chart';
+import { AccountsLedger } from './accounts/accounts-ledger';
 import { LedgerChart } from './chart/chart';
 import { DisplayApi } from './data-access/display-api';
 import {
@@ -46,6 +48,8 @@ import { PaydownLedger } from './paydown/paydown-ledger';
     Ledger,
     PaydownChart,
     PaydownLedger,
+    AccountsChart,
+    AccountsLedger,
   ],
   templateUrl: './display.html',
   styleUrls: ['../item-types/item-types.scss', './display.scss'],
@@ -70,6 +74,12 @@ export class DisplayPage {
   protected readonly paydownResource = this.api.paydown(() => this.query());
   protected readonly paydown = computed(() =>
     this.paydownResource.hasValue() ? (this.paydownResource.value()?.data ?? []) : [],
+  );
+
+  /** Credit cards and loans over the same window; empty when there are none. */
+  protected readonly accountsResource = this.api.accounts(() => this.query());
+  protected readonly accounts = computed(() =>
+    this.accountsResource.hasValue() ? (this.accountsResource.value()?.data ?? []) : [],
   );
 
   /** value() throws while the resource is in an error state, so read it only when there is one. */
@@ -102,7 +112,12 @@ export class DisplayPage {
 
     this.exporting.set(true);
     try {
-      await exportLedgerToExcel(days, { start: q.ledgerStartDate, end: q.ledgerEndDate, paydown: this.paydown() });
+      await exportLedgerToExcel(days, {
+        start: q.ledgerStartDate,
+        end: q.ledgerEndDate,
+        paydown: this.paydown(),
+        accounts: this.accounts(),
+      });
     } catch {
       this.messages.add({ severity: 'error', summary: 'The Excel file could not be created. Please try again.', life: 5000 });
     } finally {
@@ -131,6 +146,7 @@ export class DisplayPage {
     if (current && current.ledgerStartDate === request.ledgerStartDate && current.ledgerEndDate === request.ledgerEndDate) {
       this.resource.reload(); // same range: pick up any items changed since
       this.paydownResource.reload();
+      this.accountsResource.reload();
     } else {
       this.query.set(request);
     }

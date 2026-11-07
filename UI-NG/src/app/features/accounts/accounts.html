@@ -1,0 +1,181 @@
+<section class="page">
+  <header class="page__header">
+    <div>
+      <a class="page__back" routerLink="/">
+        <i class="pi pi-arrow-left" aria-hidden="true"></i>
+        Home
+      </a>
+      <h1 class="page__title">
+        <span class="accounts__badge" aria-hidden="true"><i class="pi pi-credit-card"></i></span>
+        Cards &amp; Loans
+      </h1>
+      <p class="page__subtitle">
+        Track what you owe on each card or loan. Purchases add to it; your credits and debits pay it down out of the bank.
+      </p>
+    </div>
+
+    <div class="page__actions">
+      <p-button icon="pi pi-plus" label="Add card or loan" (onClick)="editing.set('new')" />
+      <p-button routerLink="/display" icon="pi pi-chart-line" label="Forecast" [outlined]="true" />
+    </div>
+  </header>
+
+  @if (loadError(); as err) {
+    <p-message severity="error" class="page__error">
+      {{ err.message }}
+      @if (err.correlationId) {
+        <span class="page__correlation">Reference: {{ err.correlationId }}</span>
+      }
+    </p-message>
+  }
+
+  @if (accounts().length > 0) {
+    <div class="accounts__list">
+      @for (account of accounts(); track account.id) {
+        <article class="page__card account" [attr.aria-label]="account.name">
+          <header class="account__header">
+            <div>
+              <h2 class="account__name">
+                <i [class]="kindIcon(account.kind)" aria-hidden="true"></i>
+                <a [routerLink]="['/accounts', account.id]">{{ account.name }}</a>
+              </h2>
+              <p class="account__meta">
+                {{ kindLabel(account.kind) }}
+                @if (account.apr > 0) {
+                  · {{ formatPercent(account.apr) }} APR
+                } @else {
+                  · no interest
+                }
+                @if (account.creditLimit !== null) {
+                  · {{ account.creditLimit | currency: 'USD' : 'symbol' : '1.0-0' }} limit
+                }
+              </p>
+            </div>
+            <div class="account__actions">
+              <p-button icon="pi pi-pencil" [text]="true" [rounded]="true" [ariaLabel]="'Edit ' + account.name" (onClick)="editing.set(account)" />
+              <p-button icon="pi pi-trash" severity="danger" [text]="true" [rounded]="true" [ariaLabel]="'Delete ' + account.name" (onClick)="confirmDelete(account)" />
+            </div>
+          </header>
+
+          <div class="account__owed">
+            <span class="account__label">Owed</span>
+            <span class="account__balance">{{ account.openingBalance | currency: 'USD' }}</span>
+            <span class="account__meta">as of {{ formatDate(account.balanceDate) }}</span>
+          </div>
+
+          <div class="account__section">
+            <span class="account__label">Paid by</span>
+            @if (account.payments.length === 0) {
+              <p class="account__none">Nothing pays this yet. Edit it to choose a credit or debit.</p>
+            } @else {
+              <ul class="rows">
+                @for (payment of account.payments; track payment.id) {
+                  <li class="row">
+                    <span class="row__lead">
+                      @if (payment.itemTypeId === debitType) {
+                        <i class="pi pi-arrow-up-right" aria-hidden="true"></i>
+                      } @else if (payment.percent !== null) {
+                        {{ formatPercent(payment.percent) }}
+                      } @else {
+                        <i class="pi pi-dollar" aria-hidden="true"></i>
+                      }
+                    </span>
+                    <span class="row__main">
+                      @if (payment.itemTypeId === debitType) {
+                        <strong>{{ payment.itemName }}</strong>
+                      } @else if (payment.percent !== null) {
+                        of <strong>{{ payment.itemName }}</strong>
+                      } @else {
+                        from <strong>{{ payment.itemName }}</strong>
+                      }
+                      <span class="row__sub">{{ payment.itemPeriod }}</span>
+                    </span>
+                    <span class="row__money row__money--pay">{{ payment.perOccurrence | currency: 'USD' }}</span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+
+          <div class="account__section">
+            <span class="account__label">Purchases</span>
+            @if (account.purchases.length === 0) {
+              <p class="account__none">None yet.</p>
+            } @else {
+              <ul class="rows">
+                @for (purchase of account.purchases.slice(0, previewCount); track purchase.id) {
+                  <li class="row row--purchase">
+                    <span class="row__main">
+                      <strong>{{ purchase.name }}</strong>
+                      <span class="row__sub">{{ describePurchase(purchase) }}</span>
+                    </span>
+                    <span class="row__money row__money--buy">{{ purchase.amount | currency: 'USD' }}</span>
+                  </li>
+                }
+              </ul>
+              @if (account.purchases.length > previewCount) {
+                <p class="account__more">and {{ account.purchases.length - previewCount }} more</p>
+              }
+            }
+          </div>
+
+          <footer class="account__footer">
+            <p-button
+              [routerLink]="['/accounts', account.id]"
+              icon="pi pi-shopping-cart"
+              label="Manage purchases"
+              [outlined]="true"
+              size="small"
+            />
+          </footer>
+        </article>
+      }
+    </div>
+  } @else if (loading()) {
+    <div class="page__card"><p class="page__empty">Loading…</p></div>
+  } @else if (!loadError()) {
+    <div class="page__card accounts__empty">
+      <i class="pi pi-credit-card accounts__empty-icon" aria-hidden="true"></i>
+      <p>
+        Add a credit card or loan with what you owe today. Then record purchases on it, and choose which paychecks or
+        payments pay it down.
+      </p>
+      <p-button icon="pi pi-plus" label="Add card or loan" (onClick)="editing.set('new')" />
+    </div>
+  }
+</section>
+
+<app-account-editor
+  [account]="editing()"
+  [accounts]="accounts()"
+  [credits]="credits()"
+  [debits]="debits()"
+  (saved)="onSaved()"
+  (closed)="editing.set(null)"
+/>
+
+<p-dialog
+  header="Delete card or loan"
+  [visible]="pendingDelete() !== null"
+  (visibleChange)="$event || cancelDelete()"
+  [modal]="true"
+  [draggable]="false"
+  [dismissableMask]="true"
+  [style]="{ width: '26rem' }"
+  [breakpoints]="{ '640px': '95vw' }"
+>
+  @if (pendingDelete(); as account) {
+    @if (deleteError(); as message) {
+      <p-message severity="error" class="editor__problem">{{ message }}</p-message>
+    }
+    <p>
+      Delete <strong>{{ account.name }}</strong> with its {{ account.purchases.length }}
+      {{ account.purchases.length === 1 ? 'purchase' : 'purchases' }}? The forecast stops deducting its payments. Your credits
+      and debits stay.
+    </p>
+    <div class="editor__actions">
+      <p-button label="Cancel" [text]="true" [disabled]="deleting()" (onClick)="cancelDelete()" />
+      <p-button label="Delete" icon="pi pi-trash" severity="danger" [loading]="deleting()" (onClick)="delete()" />
+    </div>
+  }
+</p-dialog>

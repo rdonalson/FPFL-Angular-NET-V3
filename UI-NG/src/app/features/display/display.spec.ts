@@ -7,8 +7,9 @@ import { toSession } from '../../core/auth/auth.models';
 import { toIsoDate } from '../item-detail/item-form';
 import { DisplayPage } from './display';
 import { addDays, addMonths, today } from './display.models';
+import { AccountLedger } from './accounts/account-ledger.models';
 import { DebtPaydown } from './paydown/paydown.models';
-import { makeDay, sampleLedger, samplePaydown } from './testing-ledger';
+import { makeDay, sampleAccount, sampleLedger, samplePaydown } from './testing-ledger';
 
 describe('DisplayPage', () => {
   let fixture: ComponentFixture<DisplayPage>;
@@ -50,8 +51,13 @@ describe('DisplayPage', () => {
   const ledgerUrl = apiUrl('/display/ledger');
   const paydownUrl = apiUrl('/display/paydown');
 
-  /** Answers the paydown request that runs alongside every ledger request. */
-  const flushPaydown = (debts: DebtPaydown[] = []) => http.expectOne(paydownUrl).flush(envelope(debts));
+  const accountsUrl = apiUrl('/display/accounts');
+
+  /** Answers the paydown and accounts requests that run alongside every ledger request. */
+  const flushPaydown = (debts: DebtPaydown[] = [], accounts: AccountLedger[] = []) => {
+    http.expectOne(paydownUrl).flush(envelope(debts));
+    http.expectOne(accountsUrl).flush(envelope(accounts));
+  };
 
   it('builds the next 90 days on arrival and shows the summary', async () => {
     await create();
@@ -108,6 +114,9 @@ describe('DisplayPage', () => {
     const paydownRequest = http.expectOne(paydownUrl);
     expect(paydownRequest.request.body).toEqual(request.request.body);
     paydownRequest.flush(envelope([]));
+    const accountsRequest = http.expectOne(accountsUrl);
+    expect(accountsRequest.request.body).toEqual(request.request.body);
+    accountsRequest.flush(envelope([]));
     request.flush(envelope(sampleLedger()));
     await fixture.whenStable();
   });
@@ -118,7 +127,9 @@ describe('DisplayPage', () => {
     http
       .expectOne(ledgerUrl)
       .flush(envelope(null, 400, 'A ledger can cover at most 10 years', 'ref-1'), { status: 400, statusText: 'Bad Request' });
-    http.expectOne(paydownUrl).flush(envelope(null, 400, 'A ledger can cover at most 10 years', 'ref-1'), { status: 400, statusText: 'Bad Request' });
+    for (const url of [paydownUrl, accountsUrl]) {
+      http.expectOne(url).flush(envelope(null, 400, 'A ledger can cover at most 10 years', 'ref-1'), { status: 400, statusText: 'Bad Request' });
+    }
     await fixture.whenStable();
 
     expect(text()).toContain('A ledger can cover at most 10 years');
@@ -142,5 +153,16 @@ describe('DisplayPage', () => {
     await fixture.whenStable();
 
     expect(text()).not.toContain('Paydown chart');
+    expect(text()).not.toContain('Cards & loans chart');
+  });
+
+  it('adds the Cards & loans tabs when there are accounts', async () => {
+    await create();
+    http.expectOne(ledgerUrl).flush(envelope(sampleLedger()));
+    flushPaydown([], [sampleAccount()]);
+    await fixture.whenStable();
+
+    expect(text()).toContain('Cards & loans chart');
+    expect(text()).toContain('Cards & loans ledger');
   });
 });
