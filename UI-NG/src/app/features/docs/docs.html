@@ -47,8 +47,10 @@
             subscription), each with an amount, optional start and end dates and a recurrence pattern.
             The API expands them into dated occurrences and adds them to your
             <strong>initial amount</strong>, producing a day-by-day forecast you can read as a chart, a
-            ledger or an Excel workbook. <strong>Debt Paydown</strong> shows how quickly a debt is paid
-            off when you send part of your income to it.
+            ledger or an Excel workbook. <strong>Cards &amp; Loans</strong> keeps each credit card or loan as
+            its own account, with its own purchases, paid down by your credits and debits;
+            <strong>Debt Paydown</strong> shows how quickly a debt is paid off when you send part of your
+            income to it.
           </p>
 
           <h2 class="docs__h">Where things live</h2>
@@ -80,6 +82,7 @@
             <a class="docs__btn" routerLink="/initial-amount"><i class="pi pi-wallet" aria-hidden="true"></i> Initial Amount</a>
             <a class="docs__btn" routerLink="/credits"><i class="pi pi-arrow-down-left" aria-hidden="true"></i> Credits</a>
             <a class="docs__btn" routerLink="/debits"><i class="pi pi-arrow-up-right" aria-hidden="true"></i> Debits</a>
+            <a class="docs__btn" routerLink="/accounts"><i class="pi pi-wallet" aria-hidden="true"></i> Cards &amp; Loans</a>
             <a class="docs__btn" routerLink="/debt-paydown"><i class="pi pi-credit-card" aria-hidden="true"></i> Debt Paydown</a>
           </div>
         </p-tabpanel>
@@ -124,7 +127,7 @@
             <li>Passwords hashed with BCrypt; the guest login happens on the server</li>
             <li>
               Roles drive both the API (<code>[Authorize(Roles = …)]</code>) and the UI (admin guard and
-              menu); each user only reaches their own items, forecast and debts
+              menu); each user only reaches their own items, forecast, cards and loans, and debts
             </li>
             <li>One response envelope for every success and error, with a correlation ID for each failure</li>
           </ul>
@@ -151,6 +154,18 @@
             </tbody>
           </table>
 
+          <h2 class="docs__h">Cards &amp; Loans</h2>
+          <p>
+            Each credit card or loan is its own account: what's owed as of a date, an optional APR and,
+            for a card, an optional credit limit. Purchases on the card (one time, daily or weekly) raise
+            the balance; your credits pay it down by a fixed amount or a percentage each time they occur,
+            and a debit (the card's own monthly payment, say) by its whole amount.
+            <code>AccountLedgerCalculator</code> reuses the expanders to run each account day by day,
+            adds interest (APR ÷ 12) at each month end and looks up to 30 years ahead for the payoff
+            date. Payments also appear in the main forecast as "Card/Loan Payment" debits, and no credit
+            can be shared more than 100% across all cards and loans.
+          </p>
+
           <h2 class="docs__h">Debt Paydown</h2>
           <p>
             Pick a debit you're paying down, enter what's owed, as of which date, and an optional APR, then
@@ -166,8 +181,9 @@
         <p-tabpanel value="data">
           <h2 class="docs__h">Entities</h2>
           <p class="docs__muted">
-            PostgreSQL schema <code>fpfl</code>, shared with the Java API. EF Core maps onto the existing
-            tables; the two Debt Paydown tables come from a SQL script.
+            PostgreSQL schema <code>fpfl</code> in the FPFL-V3 database, shared with the Java API. EF
+            Core maps onto the existing tables; the Debt Paydown and Cards &amp; Loans tables come from
+            numbered SQL scripts.
           </p>
           <table class="docs__table">
             <thead>
