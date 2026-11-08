@@ -22,7 +22,7 @@ Provide a modular backend API that stores, manages, and projects user financial 
 .NET 10 · ASP.NET Core (controllers) · Entity Framework Core 10 + Npgsql · JWT bearer (`Microsoft.IdentityModel.JsonWebTokens`) · BCrypt.Net‑Next · `Microsoft.AspNetCore.OpenApi` + Swagger UI · ASP.NET Core rate limiting & health checks · xUnit · PostgreSQL
 
 **Database**
-PostgreSQL **FPFL‑V3** — a copy of the FPFL‑V2 database API‑JDK uses, plus the Cards & Loans tables. API‑JDK stays on FPFL‑V2.
+PostgreSQL **FPFL‑V3** — a copy of the earlier FPFL‑V2 database plus the Debt Paydown and Cards & Loans tables. API‑JDK (React/Java) uses FPFL‑V3 too.
 
 **Deployed as**
 A multi‑stage Docker image (`fpflapinetimg`) pushed to Azure Container Registry and rolled out to AKS by GitHub Actions. Live at <https://api-net.ledger-finance.com> · Swagger UI at <https://api-net.ledger-finance.com/swagger-ui>.
@@ -211,12 +211,12 @@ The ledger request and response keep API‑JDK's shape, so UI‑TSX's types work
 
 # 🗄️ PostgreSQL Database Structure
 
-API‑NET V3 connects to the **FPFL‑V3** database: a copy of FPFL‑V2, the database API‑JDK uses, with the Cards & Loans tables added. The `fpfl` schema itself comes from API‑JDK (Hibernate `ddl-auto: update`), so EF Core maps onto the existing tables and is **never** used to generate migrations against it; tables only API‑NET uses are created by the numbered, re‑runnable scripts in [`db/`](db).
+API‑NET V3 connects to the **FPFL‑V3** database: a copy of the earlier FPFL‑V2 with the Debt Paydown and Cards & Loans tables added — and, since November 2026, the database API‑JDK uses as well. The base `fpfl` schema was created by API‑JDK's Hibernate; EF Core maps onto the existing tables and is **never** used to generate migrations against it, API‑JDK now only validates it (`ddl-auto: validate`), and new tables are created by the numbered, re‑runnable scripts in [`db/`](db).
 
 | Database | Used by | Servers |
 | -------- | ------- | ------- |
-| **FPFL‑V3** | API‑NET (V3) | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
-| FPFL‑V2 | API‑JDK | Same servers |
+| **FPFL‑V3** | API‑NET (V3) and API‑JDK | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
+| FPFL‑V2 | Neither — kept as a fallback | Same servers |
 
 ---
 
@@ -245,7 +245,7 @@ Stores all user‑defined financial items — credits, debits, and each user's i
 
 ---
 
-### **credit_accounts** · **account_purchases** · **account_payments** *(API‑NET only — [`db/002_credit_accounts.sql`](db/002_credit_accounts.sql))*
+### **credit_accounts** · **account_purchases** · **account_payments** *([`db/002_credit_accounts.sql`](db/002_credit_accounts.sql); API‑JDK maps the same tables)*
 
 Cards & Loans' tables. Deleting an account deletes its purchases and payments; deleting a credit or debit deletes its payments (`ON DELETE CASCADE`).
 
@@ -257,7 +257,7 @@ Cards & Loans' tables. Deleting an account deletes its purchases and payments; d
 
 ---
 
-### **debts** · **debt_allocations** *(API‑NET only — [`db/001_debt_paydown.sql`](db/001_debt_paydown.sql))*
+### **debts** · **debt_allocations** *([`db/001_debt_paydown.sql`](db/001_debt_paydown.sql); API‑JDK maps the same tables)*
 
 Debt Paydown's tables. API‑JDK doesn't know them, and Hibernate's `update` mode leaves them alone. Deleting a debit deletes its debt; deleting a credit deletes its allocations (`ON DELETE CASCADE`).
 
