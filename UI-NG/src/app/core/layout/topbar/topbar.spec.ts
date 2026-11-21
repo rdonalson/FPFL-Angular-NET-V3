@@ -34,7 +34,7 @@ describe('Topbar', () => {
 
   it('links to the GitHub repo', () => {
     const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.topbar__repo');
-    expect(link?.href).toContain('github.com/rdonalson/FPFL-Angular-NET');
+    expect(link?.href).toContain('github.com/rdonalson/FPFL-Angular-NET-V3');
   });
 
   it('links the docs page', () => {

@@ -4,7 +4,7 @@ import { TabsModule } from 'primeng/tabs';
 
 import { environment } from '../../../environments/environment';
 
-export const REPO_URL = 'https://github.com/rdonalson/FPFL-Angular-NET';
+export const REPO_URL = 'https://github.com/rdonalson/FPFL-Angular-NET-V3';
 export const USER_GUIDE_URL = 'media/fpfl-user-guide.pdf';
 
 export type DocsTab = 'overview' | 'architecture' | 'ledger' | 'data' | 'cicd';

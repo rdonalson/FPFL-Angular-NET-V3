@@ -1,6 +1,6 @@
 # Financial Planner: Forecast Ledger — API NET
 
-[![Build](https://github.com/rdonalson/FPFL-Angular-NET/actions/workflows/build-push-api-net.yml/badge.svg)](https://github.com/rdonalson/FPFL-Angular-NET/actions/workflows/build-push-api-net.yml)
+[![Build](https://github.com/rdonalson/FPFL-Angular-NET-V3/actions/workflows/build-push-api-net.yml/badge.svg)](https://github.com/rdonalson/FPFL-Angular-NET-V3/actions/workflows/build-push-api-net.yml)
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com/)
 [![ASP.NET Core](https://img.shields.io/badge/ASP.NET%20Core-10-512BD4)](https://learn.microsoft.com/aspnet/core)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](../LICENSE)

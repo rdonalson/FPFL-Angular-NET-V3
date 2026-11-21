@@ -6,8 +6,8 @@
 # Building images and deploying is done by the GitHub Actions workflows in .github/workflows.
 #
 # Run from Azure Cloud Shell (Bash):
-#   git clone https://github.com/rdonalson/FPFL-Angular-NET.git
-#   cd FPFL-Angular-NET
+#   git clone https://github.com/rdonalson/FPFL-Angular-NET-V3.git
+#   cd FPFL-Angular-NET-V3
 #   bash k8s/setup-fpfl-net.sh
 #
 # Safe to re-run: anything that already exists is left as is.

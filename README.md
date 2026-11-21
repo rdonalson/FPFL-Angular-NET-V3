@@ -221,7 +221,7 @@ Ultimately this version will match every feature of [FPFL-React-Java](https://gi
 | ------- | ----- | ---------- |
 | Original | Angular / .NET Core 3.1, NgRx, Azure AD sign‑in, stored‑procedure ledger | [Financial-Planner-Forecast-Ledger](https://github.com/rdonalson/Financial-Planner-Forecast-Ledger) |
 | Sister project | React 19 / Java 25 + Spring Boot 4 on AKS | [FPFL-React-Java](https://github.com/rdonalson/FPFL-React-Java) |
-| **This repo** | **Angular 22 / .NET 10 on AKS** | FPFL-Angular-NET |
+| **This repo** | **Angular 22 / .NET 10 on AKS** | FPFL-Angular-NET-V3 |
 
 `ASP.NET MVC → Angular/.NET Core → React/Spring Boot on AKS → Angular 22/.NET 10 on AKS`
 

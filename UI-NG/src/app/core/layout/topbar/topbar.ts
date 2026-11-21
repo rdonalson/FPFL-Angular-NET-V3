@@ -24,5 +24,5 @@ export class Topbar {
   protected readonly layout = inject(Layout);
 
   protected readonly title = 'Financial Planner Forecast Ledger';
-  protected readonly repoUrl = 'https://github.com/rdonalson/FPFL-Angular-NET';
+  protected readonly repoUrl = 'https://github.com/rdonalson/FPFL-Angular-NET-V3';
 }
