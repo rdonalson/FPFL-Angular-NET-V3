@@ -13,9 +13,9 @@ The project is organized into two top‑level applications plus shared infrastru
 
 This repository serves as the **parent project**, containing both applications, the deployment manifests, and their shared development workflow.
 
-> 🚧 **Nearly at parity, and past it.** Auth, credits and debits with every recurrence pattern, the initial amount, the forecasted ledger with its chart and **Excel export**, item types, time periods, and the full deployment pipeline are live. Two features neither earlier version had go further: **Cards & Loans** (V3) keeps each credit card or loan as its own account, with its own purchases, paid down by your credits and debits, and **Debt Paydown** tracks how a debit's debt gets paid down. A **Docs** page and an admin **System Status** page (UI checks plus the API's `/health` components and `/info`) match FPFL-React-Java's. See [Project Status](#-project-status).
+> 🚧 **Nearly at parity, and past it.** Auth, credits and debits with every recurrence pattern, the initial amount, the forecasted ledger with its chart and **Excel export**, item types, time periods, and the full deployment pipeline are live. Two features that started here have since been ported to the React/Java version as well: **Cards & Loans** (V3) keeps each credit card or loan as its own account, with its own purchases, paid down by your credits and debits, and **Debt Paydown** tracks how a debit's debt gets paid down. A **Docs** page and an admin **System Status** page (UI checks plus the API's `/health` components and `/info`) match FPFL-React-Java's. See [Project Status](#-project-status).
 >
-> **V3** runs on its own database, **FPFL‑V3** (a copy of FPFL‑V2 plus the Cards & Loans tables). The React/Java version stays on FPFL‑V2.
+> **V3** runs on its own database, **FPFL‑V3** (a copy of FPFL‑V2 plus the Cards & Loans tables). Since November 2026 the [React/Java version](https://github.com/rdonalson/FPFL-React-Java) runs on FPFL‑V3 too, with its own port of Cards & Loans, so both stacks share live data again.
 
 ### 🌐 Live Environment
 
@@ -84,7 +84,7 @@ The FPFL system is designed as a **modular, maintainable, enterprise‑grade ful
 | `Fpfl.Auth` | `module-auth` | Users, roles, JWT issue/validation, refresh tokens, BCrypt hashing |
 | `Fpfl.Common` | `module-common-bc` | Domain exceptions and the sanitizer |
 
-- Connects to **PostgreSQL** (schema `fpfl`) in the **FPFL‑V3** database — the same schema as API‑JDK's FPFL‑V2, plus the tables only API‑NET uses
+- Connects to **PostgreSQL** (schema `fpfl`) in the **FPFL‑V3** database — the same database API‑JDK uses
 - OpenAPI document served by `Microsoft.AspNetCore.OpenApi`, browsable in **Swagger UI**
 - Health at `/health` with the same components as API‑JDK's Actuator (`db`, `diskSpace`, `ping`), and version / build / runtime at `/info`; `/health` is wired into the Kubernetes readiness probe
 
@@ -107,18 +107,18 @@ For full backend details, see the API README:
 
 # **🗄️ Database Overview (PostgreSQL)**
 
-API‑NET uses the **`fpfl` schema** that API‑JDK created. V3 runs against **FPFL‑V3**, a copy of the shared FPFL‑V2 database with the Cards & Loans tables added; API‑JDK stays on FPFL‑V2, so the two stacks no longer share live data. The base tables come from API‑JDK (Hibernate `ddl-auto=update`). EF Core maps onto the existing tables and is **not** used to generate migrations, and the tables only API‑NET uses come from numbered scripts in [`API-NET/db`](API-NET/db).
+Both APIs use the **`fpfl` schema** in **FPFL‑V3**, a copy of the earlier FPFL‑V2 database with the Debt Paydown and Cards & Loans tables added by the numbered scripts in [`API-NET/db`](API-NET/db). The base tables were originally created by API‑JDK's Hibernate; today neither API changes the schema on its own — EF Core maps onto the existing tables and is **not** used to generate migrations, and API‑JDK runs Hibernate with `ddl-auto=validate`. New tables arrive only through the scripts.
 
 | Database | Used by | Where |
 | -------- | ------- | ----- |
-| **FPFL‑V3** | API‑NET (V3) | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
-| FPFL‑V2 | API‑JDK (React/Java) | Same servers |
+| **FPFL‑V3** | API‑NET (V3) and API‑JDK (React/Java) | Local PostgreSQL and Azure `pg-fpfl-v2.postgres.database.azure.com` |
+| FPFL‑V2 | Neither — kept as a fallback | Same servers |
 
 ### **Domain Entities**
 
 - `Item` — user‑defined financial items with amount, date bounds, and recurrence metadata
-- `CreditAccount` / `AccountPurchase` / `AccountPayment` — Cards & Loans: each credit card or loan, the purchases charged to it, and the credits and debits that pay it (API‑NET only; created by `API-NET/db/002_credit_accounts.sql`)
-- `Debt` / `DebtAllocation` — Debt Paydown's tracked debts and the credits allocated to them (API‑NET only; created by `API-NET/db/001_debt_paydown.sql`)
+- `CreditAccount` / `AccountPurchase` / `AccountPayment` — Cards & Loans: each credit card or loan, the purchases charged to it, and the credits and debits that pay it (created by `API-NET/db/002_credit_accounts.sql`)
+- `Debt` / `DebtAllocation` — Debt Paydown's tracked debts and the credits allocated to them (created by `API-NET/db/001_debt_paydown.sql`)
 - `ItemType` — credit / debit / initial‑amount classification
 - `TimePeriod` — recurrence periods (one‑time, daily, weekly, bi‑weekly, monthly, quarterly, annual, etc.)
 
@@ -187,13 +187,13 @@ A feature new to this version. Pick a debit you're paying down (a credit card pa
 - **Main forecast** — allocations appear in the ledger as extra **"Debt Paydown"** debits, so the running balance stays truthful (the debit's own payment is already a debit and isn't counted twice).
 - **Rules** — only your own debits and credits; a debit is tracked once; and no credit can be allocated more than 100% across all your debts (*"Paycheck is already 70% allocated to other debts; at most 30% is left"*).
 - **UI** — a **Debt Paydown** setup page (cards per debt, an editor with live dollars‑per‑occurrence and "% left" hints), plus **Paydown chart** and **Paydown ledger** tabs on Display and a **Debt Paydown** sheet in the Excel export with the same expandable rows.
-- **Storage** — two new tables, `fpfl.debts` and `fpfl.debt_allocations`, created by [`API-NET/db/001_debt_paydown.sql`](API-NET/db/001_debt_paydown.sql) (the shared schema is owned by API‑JDK, so new tables come from scripts, not EF migrations).
+- **Storage** — two new tables, `fpfl.debts` and `fpfl.debt_allocations`, created by [`API-NET/db/001_debt_paydown.sql`](API-NET/db/001_debt_paydown.sql) (the shared schema isn't migrated by either API, so new tables come from scripts).
 
 ---
 
 # **🚧 Project Status**
 
-Ultimately this version will match every feature of [FPFL-React-Java](https://github.com/rdonalson/FPFL-React-Java).
+This version matches every feature of [FPFL-React-Java](https://github.com/rdonalson/FPFL-React-Java), which now has Excel export, Debt Paydown and Cards & Loans too; the two share the FPFL‑V3 database.
 
 | Area | UI‑NG | API‑NET |
 | ---- | ----- | ------- |

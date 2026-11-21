@@ -7,7 +7,7 @@ It replaces the original version's NgModule/NgRx front end, keeping the same pro
 
 Live at <https://ui-ng.ledger-finance.com> · API at <https://api-net.ledger-finance.com>
 
-> 🚧 **Nearly at parity, and past it.** Everything in UI-TSX is here — credits and debits, the initial amount, and the forecast with its chart and ledger — plus three things UI-TSX doesn't have: **Export to Excel**, **Cards & Loans** (V3) and **Debt Paydown**. The **Docs** page and the admin **System Status** page now match UI-TSX's too. See [Project Status](#-project-status).
+> 🚧 **At parity.** Everything in UI-TSX is here — credits and debits, the initial amount, and the forecast with its chart and ledger — and the three features that started here, **Export to Excel**, **Cards & Loans** (V3) and **Debt Paydown**, have since been ported to UI-TSX. The **Docs** page and the admin **System Status** page now match UI-TSX's too. See [Project Status](#-project-status).
 
 ---
 
@@ -205,9 +205,9 @@ The goal is the same feature set as [UI-TSX](https://github.com/rdonalson/FPFL-R
 | Credit / debit items with per‑period add / edit pages | ✅ Done |
 | Initial amount | ✅ Done |
 | Forecasted ledger table + chart with date‑range selection | ✅ Done |
-| Ledger download to Excel with expandable rows | ✅ Done (not in UI-TSX) |
-| Cards & Loans — accounts page, account page with purchases, chart / ledger tabs, Excel sheet *(V3)* | ✅ Done (not in UI-TSX) |
-| Debt Paydown — setup page, paydown chart / ledger tabs, Excel sheet | ✅ Done (not in UI-TSX) |
+| Ledger download to Excel with expandable rows | ✅ Done (ported to UI-TSX) |
+| Cards & Loans — accounts page, account page with purchases, chart / ledger tabs, Excel sheet *(V3)* | ✅ Done (ported to UI-TSX) |
+| Debt Paydown — setup page, paydown chart / ledger tabs, Excel sheet | ✅ Done (ported to UI-TSX) |
 | Docs page | ✅ Done |
 | Admin status page (UI + API health) | ✅ Done |
 | Client error forwarding to `/client-logs` | 🔜 Planned |

@@ -59,6 +59,7 @@ describe('Docs', () => {
     expect(text()).toContain('How a forecast is built');
     expect(text()).toContain('Nth weekday');
     expect(text()).toContain('PaydownCalculator');
+    expect(text()).toContain('AccountLedgerCalculator');
 
     tab('Architecture').click();
     await fixture.whenStable();
@@ -68,6 +69,7 @@ describe('Docs', () => {
     tab('Data Model').click();
     await fixture.whenStable();
     expect(text()).toContain('DebtAllocation');
+    expect(text()).toContain('CreditAccount');
 
     tab('CI/CD').click();
     await fixture.whenStable();
