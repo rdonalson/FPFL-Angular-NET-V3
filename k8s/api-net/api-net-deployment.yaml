@@ -15,14 +15,6 @@ spec:
             labels:
                 app: fpfl-api-net
         spec:
-            # Runs only on the dedicated .NET/Angular node pool (see deploy-fpfl-net.sh).
-            nodeSelector:
-                workload: fpfl-net
-            tolerations:
-                - key: workload
-                  operator: Equal
-                  value: fpfl-net
-                  effect: NoSchedule
             securityContext:
                 runAsNonRoot: true
             containers:

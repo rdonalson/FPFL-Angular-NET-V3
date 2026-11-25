@@ -15,13 +15,6 @@ spec:
             labels:
                 app: fpfl-ui-ng
         spec:
-            nodeSelector:
-                workload: fpfl-net
-            tolerations:
-                - key: workload
-                  operator: Equal
-                  value: fpfl-net
-                  effect: NoSchedule
             securityContext:
                 runAsNonRoot: true
             containers:
